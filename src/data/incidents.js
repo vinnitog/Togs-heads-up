@@ -1,4 +1,23 @@
+const G1_BAURU_MARILIA_RSS_URL = "https://g1.globo.com/rss/g1/sp/bauru-marilia/";
+const G1_RSS_JSON_URL = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(G1_BAURU_MARILIA_RSS_URL)}`;
+
 export const INCIDENT_API_SOURCES = [
+  {
+    id: "g1-bauru-marilia",
+    name: "G1 Bauru e Marilia",
+    cadence: "30 min",
+    url: G1_RSS_JSON_URL,
+    parser: "rss2json",
+    detail: "Feed regional real do G1 convertido para JSON, filtrado por ocorrencias em Marilia.",
+  },
+  {
+    id: "inmet-alertas",
+    name: "INMET Avisos Meteorologicos",
+    cadence: "operacional",
+    url: "https://apiprevmet3.inmet.gov.br/avisos/ativos",
+    parser: "inmet",
+    detail: "Avisos meteorologicos oficiais ativos filtrados pelo geocode de Marilia.",
+  },
   {
     id: "alerts",
     name: "API de alertas",

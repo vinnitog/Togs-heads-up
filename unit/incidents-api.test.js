@@ -4,6 +4,8 @@ import {
   fetchIncidents,
   getSourceStatuses,
   normalizeGenericPayload,
+  normalizeInmetPayload,
+  normalizeRss2JsonPayload,
   normalizeWazePayload,
 } from "../src/services/incidentsApi.js";
 
@@ -76,6 +78,72 @@ test("waze feed payload is filtered and normalized for Marilia", () => {
   assert.equal(incidents[0].location, "Av. Rio Branco");
 });
 
+test("rss2json regional feed only keeps Marilia safety reports", () => {
+  const incidents = normalizeRss2JsonPayload(
+    {
+      items: [
+        {
+          title: "Jovem suspeito de crime e preso em Marilia",
+          pubDate: "2026-06-27 12:30:00",
+          link: "https://example.test/marilia",
+          guid: "g1-1",
+          description: "Ocorrencia policial no Alto Cafezal em Marilia (SP).",
+        },
+        {
+          title: "IBGE abre inscricoes em Marilia",
+          pubDate: "2026-06-27 11:00:00",
+          link: "https://example.test/ibge",
+          guid: "g1-2",
+          description: "Vagas temporarias para pesquisa agropecuaria.",
+        },
+      ],
+    },
+    { id: "g1-bauru-marilia", name: "G1 Bauru e Marilia" },
+  );
+
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0].id, "g1-1");
+  assert.equal(incidents[0].type, "policial");
+  assert.equal(incidents[0].neighborhood, "Alto Cafezal");
+  assert.equal(incidents[0].url, "https://example.test/marilia");
+});
+
+test("inmet active warnings are filtered by Marilia geocode", () => {
+  const incidents = normalizeInmetPayload(
+    {
+      hoje: [
+        {
+          id: 1,
+          codigo: "alerta-marilia",
+          descricao: "Tempestade",
+          data_inicio: "2026-06-27T00:00:00.000Z",
+          hora_inicio: "12:00",
+          data_fim: "2026-06-27T00:00:00.000Z",
+          hora_fim: "23:59",
+          geocodes: "3529005,3506003",
+          municipios: "Marilia - SP (3529005),Bauru - SP (3506003)",
+          severidade: "Perigo Potencial",
+          riscos: ["Chuva intensa e ventos fortes."],
+        },
+        {
+          id: 2,
+          codigo: "alerta-fora",
+          descricao: "Baixa Umidade",
+          geocodes: "3550308",
+          municipios: "Sao Paulo - SP (3550308)",
+        },
+      ],
+    },
+    { id: "inmet-alertas", name: "INMET Avisos Meteorologicos" },
+  );
+
+  assert.equal(incidents.length, 1);
+  assert.equal(incidents[0].id, "inmet-alertas-alerta-marilia");
+  assert.equal(incidents[0].type, "risco");
+  assert.equal(incidents[0].location, "Marilia-SP");
+  assert.match(incidents[0].detail, /Chuva intensa/);
+});
+
 test("generic API payload keeps coordinate objects out of visible text", () => {
   const [incident] = normalizeGenericPayload(
     {
@@ -96,12 +164,49 @@ test("generic API payload keeps coordinate objects out of visible text", () => {
   assert.equal(incident.neighborhood, "Marilia");
 });
 
-test("fetchIncidents returns empty state when no real API is configured", async () => {
-  const result = await fetchIncidents({ env: {}, fetchImpl: async () => assert.fail("fetch should not run") });
+test("fetchIncidents consults real default public APIs without env setup", async () => {
+  const requestedUrls = [];
+  const result = await fetchIncidents({
+    env: {},
+    fetchImpl: async (url) => {
+      requestedUrls.push(url);
 
-  assert.deepEqual(result.incidents, []);
-  assert.equal(result.warnings[0], "Nenhuma API real configurada.");
-  assert.ok(result.sources.every((source) => source.status === "pendente"));
+      if (url.includes("rss2json")) {
+        return {
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                title: "Acidente interdita via em Marilia",
+                pubDate: "2026-06-27 10:00:00",
+                link: "https://example.test/acidente",
+                guid: "g1-live",
+                description: "Colisao no Centro de Marilia.",
+              },
+            ],
+          }),
+        };
+      }
+
+      if (url.includes("apiprevmet3.inmet.gov.br")) {
+        return {
+          ok: true,
+          json: async () => ({ hoje: [], amanha: [] }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({ incidents: [] }),
+      };
+    },
+  });
+
+  assert.ok(requestedUrls.some((url) => url.includes("api.rss2json.com")));
+  assert.ok(requestedUrls.some((url) => url.includes("apiprevmet3.inmet.gov.br")));
+  assert.equal(result.incidents.length, 1);
+  assert.equal(result.incidents[0].source, "G1 Bauru e Marilia");
+  assert.equal(result.sources.find((source) => source.id === "g1-bauru-marilia").status, "conectado");
 });
 
 test("fetchIncidents consults configured sources without fake fallback", async () => {
@@ -110,6 +215,20 @@ test("fetchIncidents consults configured sources without fake fallback", async (
       VITE_WAZE_FEED_URL: "https://example.test/waze.json",
     },
     fetchImpl: async (url) => {
+      if (url.includes("rss2json")) {
+        return {
+          ok: true,
+          json: async () => ({ items: [] }),
+        };
+      }
+
+      if (url.includes("apiprevmet3.inmet.gov.br")) {
+        return {
+          ok: true,
+          json: async () => ({ hoje: [], amanha: [] }),
+        };
+      }
+
       assert.equal(url, "https://example.test/waze.json");
       return {
         ok: true,
@@ -138,6 +257,8 @@ test("fetchIncidents consults configured sources without fake fallback", async (
 test("source statuses reflect configured endpoints", () => {
   const statuses = getSourceStatuses({ VITE_INCIDENTS_API_URL: "https://example.test/incidents" });
 
+  assert.equal(statuses.find((source) => source.id === "g1-bauru-marilia").status, "conectado");
+  assert.equal(statuses.find((source) => source.id === "inmet-alertas").status, "conectado");
   assert.equal(statuses.find((source) => source.id === "alerts").status, "conectado");
   assert.equal(statuses.find((source) => source.id === "waze").status, "pendente");
 });
