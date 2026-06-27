@@ -72,7 +72,9 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(index, /%BASE_URL%icon\.svg/);
   assert.match(manifest, /"start_url": "\.\/"/);
   assert.match(manifest, /"scope": "\.\/"/);
-  assert.match(serviceWorker, /togs-heads-up-v3/);
+  assert.match(serviceWorker, /togs-heads-up-v4/);
+  assert.match(serviceWorker, /application\/json/);
+  assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /self\.registration\.scope/);
   assert.match(workflow, /branches:\s*\n\s*- main\s*\n\s*- develop/);
   assert.match(packageJson, /"packageManager": "npm@11\.6\.2"/);
@@ -84,13 +86,16 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(workflow, /actions\/deploy-pages/);
 });
 
-test("app is consult only and labels demo data clearly", () => {
+test("app is consult only and uses API data without fake incidents", () => {
   const app = read("src/App.jsx");
   const data = read("src/data/incidents.js");
+  const api = read("src/services/incidentsApi.js");
 
   assert.doesNotMatch(app, new RegExp("Relat" + "ar|Registrar " + "alerta|ReportPanel|PlusCircle|Trash2"));
   assert.doesNotMatch(app, new RegExp("local" + "Storage"));
-  assert.match(app, /Dados demo/);
-  assert.match(app, /Os alertas exibidos sao demonstrativos/);
-  assert.match(data, /Dado demonstrativo/);
+  assert.doesNotMatch(app, /Dados demo|demonstrativos|SEED_INCIDENTS/);
+  assert.doesNotMatch(data, /SEED_INCIDENTS|Dado demonstrativo/);
+  assert.match(app, /fetchIncidents/);
+  assert.match(data, /VITE_INCIDENTS_API_URL/);
+  assert.match(api, /Nenhuma API real configurada/);
 });

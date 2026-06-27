@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -31,7 +31,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { SEED_INCIDENTS, SOURCE_STATUS } from "./data/incidents.js";
+import { fetchIncidents, getSourceStatuses } from "./services/incidentsApi.js";
 import {
   STATUS_LABELS,
   SEVERITY_LABELS,
@@ -50,7 +50,13 @@ import {
 
 const CHART_COLORS = ["#ef4444", "#2563eb", "#f59e0b", "#0f766e", "#7c3aed"];
 const DATA_DISCLOSURE =
-  "Os alertas exibidos sao demonstrativos. Nenhuma API real esta conectada neste momento.";
+  "Os alertas exibidos vem somente das APIs configuradas. Sem fonte ativa, nenhum dado e inventado.";
+const SOURCE_BADGE_LABELS = {
+  conectado: "Conectada",
+  pendente: "Pendente",
+  erro: "Erro",
+  "sem-dados": "Sem dados",
+};
 
 const INCIDENT_ICONS = {
   acidente: Car,
@@ -62,10 +68,46 @@ const INCIDENT_ICONS = {
 
 function App() {
   const [filters, setFilters] = useState({ type: "todos", status: "todos", severity: "todas", query: "" });
-  const [selectedId, setSelectedId] = useState(SEED_INCIDENTS[0]?.id);
-  const [lastSync, setLastSync] = useState(new Date());
+  const [incidents, setIncidents] = useState([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [sources, setSources] = useState(() => getSourceStatuses());
+  const [lastSync, setLastSync] = useState(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
+
+  const loadIncidentFeed = useCallback(async ({ signal, showNotice = false } = {}) => {
+    setIsLoading(true);
+    setLoadError("");
+
+    try {
+      const result = await fetchIncidents({ signal });
+      const nextIncidents = sortIncidentsByRisk(result.incidents);
+
+      setIncidents(nextIncidents);
+      setSources(result.sources);
+      setLastSync(new Date(result.fetchedAt));
+      setSelectedId((currentId) => {
+        if (nextIncidents.some((incident) => incident.id === currentId)) return currentId;
+        return nextIncidents[0]?.id ?? "";
+      });
+
+      if (result.warnings.length > 0) {
+        setLoadError(result.warnings.join(" "));
+      }
+
+      if (showNotice) {
+        setNotice(`${nextIncidents.length} alerta(s) real(is) carregado(s)`);
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      setLoadError(error?.message || "Nao foi possivel consultar as APIs.");
+      if (showNotice) setNotice("Falha ao atualizar as APIs");
+    } finally {
+      if (!signal?.aborted) setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -81,26 +123,31 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const controller = new AbortController();
+    loadIncidentFeed({ signal: controller.signal });
+    return () => controller.abort();
+  }, [loadIncidentFeed]);
+
+  useEffect(() => {
     if (!notice) return undefined;
     const timeoutId = window.setTimeout(() => setNotice(""), 2600);
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
 
-  const incidents = useMemo(() => sortIncidentsByRisk(SEED_INCIDENTS), []);
   const filteredIncidents = useMemo(() => filterIncidents(incidents, filters), [incidents, filters]);
   const selectedIncident = incidents.find((incident) => incident.id === selectedId) ?? incidents[0];
   const summary = useMemo(() => createIncidentSummary(incidents), [incidents]);
   const typeChartData = useMemo(() => getTypeChartData(incidents), [incidents]);
   const timeWindowData = useMemo(() => getTimeWindowData(incidents), [incidents]);
   const hotspots = useMemo(() => getHotspots(incidents), [incidents]);
+  const hasConfiguredSource = sources.some((source) => source.status !== "pendente");
 
   function updateFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
   function refreshFeed() {
-    setLastSync(new Date());
-    setNotice("Consulta atualizada localmente");
+    loadIncidentFeed({ showNotice: true });
   }
 
   return (
@@ -115,7 +162,7 @@ function App() {
         <div className="topbar-actions">
           <span className="data-pill">
             <Database size={16} />
-            Dados demo
+            {hasConfiguredSource ? "APIs reais" : "APIs pendentes"}
           </span>
           <span className={`connection-pill ${isOnline ? "online" : "offline"}`}>
             {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
@@ -129,9 +176,16 @@ function App() {
 
       <main>
         <section className="data-disclaimer" aria-label="Aviso sobre a origem dos dados">
-          <Database size={18} />
+          {loadError ? <AlertTriangle size={18} /> : <Database size={18} />}
           <span>{DATA_DISCLOSURE}</span>
         </section>
+
+        {(isLoading || loadError) && (
+          <section className={`feed-state ${loadError ? "warning" : ""}`} aria-live="polite">
+            <RefreshCw size={18} className={isLoading ? "spin" : ""} />
+            <span>{isLoading ? "Consultando APIs de ocorrencias..." : loadError}</span>
+          </section>
+        )}
 
         <section className="metric-grid" aria-label="Resumo dos alertas">
           <MetricCard icon={Radio} label="Alertas ativos" value={summary.active} tone="danger" />
@@ -146,6 +200,7 @@ function App() {
           <IncidentFeed
             incidents={filteredIncidents}
             filters={filters}
+            isLoading={isLoading}
             onFilterChange={updateFilter}
             onSelect={setSelectedId}
             selectedId={selectedIncident?.id}
@@ -155,7 +210,7 @@ function App() {
         <section className="insight-grid">
           <AnalyticsPanel typeChartData={typeChartData} timeWindowData={timeWindowData} />
           <HotspotsPanel hotspots={hotspots} />
-          <SourcesPanel sources={SOURCE_STATUS} />
+          <SourcesPanel sources={sources} />
         </section>
       </main>
 
@@ -178,7 +233,8 @@ function App() {
 
       <footer className="app-footer">
         <Smartphone size={16} />
-        Modo consulta. Cache {lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.
+        Ultima consulta{" "}
+        {lastSync ? lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "pendente"}.
       </footer>
     </div>
   );
@@ -216,6 +272,7 @@ function MapPanel({ incidents, selectedIncident, onSelect }) {
         <span className="map-label center">Centro</span>
         <span className="map-label north">Aquarius</span>
         <span className="map-label south">BR-153</span>
+        {incidents.length === 0 && <div className="map-empty">Nenhum alerta real retornado pelas APIs.</div>}
         {incidents.map((incident) => {
           const Icon = INCIDENT_ICONS[incident.type] ?? AlertTriangle;
           const risk = calculateRiskScore(incident);
@@ -236,7 +293,11 @@ function MapPanel({ incidents, selectedIncident, onSelect }) {
         })}
       </div>
 
-      {selectedIncident && <IncidentDetails incident={selectedIncident} />}
+      {selectedIncident ? (
+        <IncidentDetails incident={selectedIncident} />
+      ) : (
+        <div className="empty-state compact">Aguardando alertas reais para detalhar.</div>
+      )}
     </section>
   );
 }
@@ -267,7 +328,7 @@ function IncidentDetails({ incident }) {
   );
 }
 
-function IncidentFeed({ incidents, filters, onFilterChange, onSelect, selectedId }) {
+function IncidentFeed({ incidents, filters, isLoading, onFilterChange, onSelect, selectedId }) {
   return (
     <section className="panel feed-panel" id="alertas">
       <div className="panel-heading compact">
@@ -317,8 +378,10 @@ function IncidentFeed({ incidents, filters, onFilterChange, onSelect, selectedId
       </div>
 
       <div className="incident-list">
-        {incidents.length === 0 ? (
-          <div className="empty-state">Nenhum alerta no filtro atual.</div>
+        {isLoading ? (
+          <div className="empty-state">Carregando alertas das APIs...</div>
+        ) : incidents.length === 0 ? (
+          <div className="empty-state">Nenhum alerta real no filtro atual.</div>
         ) : (
           incidents.map((incident) => (
             <IncidentRow
@@ -390,6 +453,8 @@ function RiskPill({ risk }) {
 }
 
 function AnalyticsPanel({ typeChartData, timeWindowData }) {
+  const hasChartData = typeChartData.length > 0 || timeWindowData.some((item) => item.alertas > 0);
+
   return (
     <section className="panel analytics-panel" id="dados">
       <div className="panel-heading">
@@ -400,33 +465,39 @@ function AnalyticsPanel({ typeChartData, timeWindowData }) {
         <BarChart3 size={22} />
       </div>
 
-      <div className="chart-block">
-        <ResponsiveContainer width="100%" height={210}>
-          <BarChart data={typeChartData}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-            <XAxis dataKey="type" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} width={28} />
-            <Tooltip cursor={{ fill: "#f3f4f6" }} />
-            <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-              {typeChartData.map((entry, index) => (
-                <Cell key={entry.type} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      {hasChartData ? (
+        <>
+          <div className="chart-block">
+            <ResponsiveContainer width="100%" height={210}>
+              <BarChart data={typeChartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="type" tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} width={28} />
+                <Tooltip cursor={{ fill: "#f3f4f6" }} />
+                <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                  {typeChartData.map((entry, index) => (
+                    <Cell key={entry.type} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
 
-      <div className="chart-block">
-        <ResponsiveContainer width="100%" height={190}>
-          <AreaChart data={timeWindowData}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-            <XAxis dataKey="janela" tickLine={false} axisLine={false} fontSize={12} />
-            <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} width={28} />
-            <Tooltip />
-            <Area type="monotone" dataKey="alertas" stroke="#2563eb" fill="#bfdbfe" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+          <div className="chart-block">
+            <ResponsiveContainer width="100%" height={190}>
+              <AreaChart data={timeWindowData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                <XAxis dataKey="janela" tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} width={28} />
+                <Tooltip />
+                <Area type="monotone" dataKey="alertas" stroke="#2563eb" fill="#bfdbfe" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </>
+      ) : (
+        <div className="empty-state chart-empty">Graficos aguardando dados reais das APIs.</div>
+      )}
     </section>
   );
 }
@@ -443,17 +514,21 @@ function HotspotsPanel({ hotspots }) {
       </div>
 
       <div className="hotspot-list">
-        {hotspots.map((hotspot) => (
-          <div className="hotspot-row" key={hotspot.neighborhood}>
-            <div>
-              <strong>{hotspot.neighborhood}</strong>
-              <small>
-                {hotspot.total} alertas, {hotspot.active} ativos
-              </small>
+        {hotspots.length === 0 ? (
+          <div className="empty-state compact">Sem pontos de atencao retornados.</div>
+        ) : (
+          hotspots.map((hotspot) => (
+            <div className="hotspot-row" key={hotspot.neighborhood}>
+              <div>
+                <strong>{hotspot.neighborhood}</strong>
+                <small>
+                  {hotspot.total} alertas, {hotspot.active} ativos
+                </small>
+              </div>
+              <RiskPill risk={hotspot.risk} />
             </div>
-            <RiskPill risk={hotspot.risk} />
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </section>
   );
@@ -477,7 +552,9 @@ function SourcesPanel({ sources }) {
               <strong>{source.name}</strong>
               <small>{source.detail}</small>
             </div>
-            <span className={`source-status ${source.status}`}>{source.cadence}</span>
+            <span className={`source-status ${source.status}`}>
+              {SOURCE_BADGE_LABELS[source.status] ?? source.cadence}
+            </span>
           </article>
         ))}
       </div>

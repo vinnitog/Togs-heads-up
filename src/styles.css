@@ -186,6 +186,31 @@ select:focus-visible {
   font-weight: 700;
 }
 
+.feed-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 12px 14px;
+  color: #374151;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+}
+
+.feed-state.warning {
+  color: #92400e;
+  background: var(--warning-soft);
+  border-color: #fde68a;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -356,6 +381,23 @@ select:focus-visible {
 .map-label.south {
   left: 56%;
   top: 74%;
+}
+
+.map-empty {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  display: grid;
+  place-items: center;
+  min-height: 76px;
+  padding: 14px;
+  color: #374151;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-weight: 800;
 }
 
 .map-marker {
@@ -619,6 +661,10 @@ select:focus-visible {
   min-height: 190px;
 }
 
+.chart-empty {
+  min-height: 260px;
+}
+
 .hotspot-row,
 .source-row {
   display: flex;
@@ -655,6 +701,26 @@ select:focus-visible {
   background: var(--warning-soft);
 }
 
+.source-status.conectado {
+  color: #0f766e;
+  background: var(--success-soft);
+}
+
+.source-status.pendente {
+  color: #475467;
+  background: #eef2f7;
+}
+
+.source-status.erro {
+  color: #991b1b;
+  background: var(--danger-soft);
+}
+
+.source-status.sem-dados {
+  color: #92400e;
+  background: var(--warning-soft);
+}
+
 .empty-state {
   display: grid;
   place-items: center;
@@ -664,6 +730,12 @@ select:focus-visible {
   border: 1px dashed var(--border);
   border-radius: 8px;
   font-weight: 700;
+}
+
+.empty-state.compact {
+  min-height: 76px;
+  margin-top: 14px;
+  text-align: center;
 }
 
 .toast {
@@ -805,5 +877,11 @@ select:focus-visible {
   *::after {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
