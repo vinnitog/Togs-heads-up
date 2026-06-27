@@ -10,17 +10,14 @@ import {
   Gauge,
   MapPin,
   Navigation,
-  PlusCircle,
   Radio,
   RefreshCw,
   Route,
   Search,
   ShieldAlert,
   Smartphone,
-  Trash2,
   Wifi,
   WifiOff,
-  X,
 } from "lucide-react";
 import {
   Area,
@@ -34,7 +31,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { NEIGHBORHOODS, SEED_INCIDENTS, SOURCE_STATUS } from "./data/incidents.js";
+import { SEED_INCIDENTS, SOURCE_STATUS } from "./data/incidents.js";
 import {
   STATUS_LABELS,
   SEVERITY_LABELS,
@@ -51,8 +48,9 @@ import {
   sortIncidentsByRisk,
 } from "./utils/incidents.js";
 
-const LOCAL_REPORTS_KEY = "togs-heads-up:local-reports";
 const CHART_COLORS = ["#ef4444", "#2563eb", "#f59e0b", "#0f766e", "#7c3aed"];
+const DATA_DISCLOSURE =
+  "Os alertas exibidos sao demonstrativos. Nenhuma API real esta conectada neste momento.";
 
 const INCIDENT_ICONS = {
   acidente: Car,
@@ -62,26 +60,12 @@ const INCIDENT_ICONS = {
   historico: Database,
 };
 
-function readLocalReports() {
-  try {
-    return JSON.parse(localStorage.getItem(LOCAL_REPORTS_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
-}
-
 function App() {
   const [filters, setFilters] = useState({ type: "todos", status: "todos", severity: "todas", query: "" });
-  const [localReports, setLocalReports] = useState(readLocalReports);
   const [selectedId, setSelectedId] = useState(SEED_INCIDENTS[0]?.id);
   const [lastSync, setLastSync] = useState(new Date());
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
-  const [panelOpen, setPanelOpen] = useState(false);
   const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    localStorage.setItem(LOCAL_REPORTS_KEY, JSON.stringify(localReports));
-  }, [localReports]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -102,7 +86,7 @@ function App() {
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
 
-  const incidents = useMemo(() => sortIncidentsByRisk([...localReports, ...SEED_INCIDENTS]), [localReports]);
+  const incidents = useMemo(() => sortIncidentsByRisk(SEED_INCIDENTS), []);
   const filteredIncidents = useMemo(() => filterIncidents(incidents, filters), [incidents, filters]);
   const selectedIncident = incidents.find((incident) => incident.id === selectedId) ?? incidents[0];
   const summary = useMemo(() => createIncidentSummary(incidents), [incidents]);
@@ -116,32 +100,7 @@ function App() {
 
   function refreshFeed() {
     setLastSync(new Date());
-    setNotice("Feed atualizado localmente");
-  }
-
-  function addReport(report) {
-    const incident = {
-      id: `local-${Date.now()}`,
-      source: "Relato local",
-      status: "ativo",
-      confidence: 6,
-      occurredAt: new Date().toISOString(),
-      position: {
-        x: 22 + Math.round(Math.random() * 56),
-        y: 24 + Math.round(Math.random() * 50),
-      },
-      ...report,
-    };
-
-    setLocalReports((current) => [incident, ...current]);
-    setSelectedId(incident.id);
-    setPanelOpen(false);
-    setNotice("Alerta local registrado");
-  }
-
-  function clearLocalReports() {
-    setLocalReports([]);
-    setNotice("Relatos locais removidos");
+    setNotice("Consulta atualizada localmente");
   }
 
   return (
@@ -150,10 +109,14 @@ function App() {
         <div>
           <p className="eyebrow">Marilia-SP</p>
           <h1>Togs Heads Up</h1>
-          <p className="topbar-copy">Painel preventivo de acidentes, ocorrencias e pontos de atencao.</p>
+          <p className="topbar-copy">Painel preventivo de consulta sobre acidentes, ocorrencias e pontos de atencao.</p>
         </div>
 
         <div className="topbar-actions">
+          <span className="data-pill">
+            <Database size={16} />
+            Dados demo
+          </span>
           <span className={`connection-pill ${isOnline ? "online" : "offline"}`}>
             {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
             {isOnline ? "Online" : "Offline"}
@@ -161,14 +124,15 @@ function App() {
           <button className="icon-button" type="button" onClick={refreshFeed} aria-label="Atualizar feed">
             <RefreshCw size={18} />
           </button>
-          <button className="primary-button" type="button" onClick={() => setPanelOpen(true)}>
-            <PlusCircle size={18} />
-            Relatar
-          </button>
         </div>
       </header>
 
       <main>
+        <section className="data-disclaimer" aria-label="Aviso sobre a origem dos dados">
+          <Database size={18} />
+          <span>{DATA_DISCLOSURE}</span>
+        </section>
+
         <section className="metric-grid" aria-label="Resumo dos alertas">
           <MetricCard icon={Radio} label="Alertas ativos" value={summary.active} tone="danger" />
           <MetricCard icon={BellRing} label="Risco critico" value={summary.critical} tone="warning" />
@@ -208,26 +172,13 @@ function App() {
           <BarChart3 size={18} />
           Dados
         </a>
-        <button type="button" onClick={() => setPanelOpen(true)}>
-          <PlusCircle size={18} />
-          Relatar
-        </button>
       </nav>
-
-      {panelOpen && <ReportPanel onClose={() => setPanelOpen(false)} onSubmit={addReport} />}
-
-      {localReports.length > 0 && (
-        <button className="clear-button" type="button" onClick={clearLocalReports}>
-          <Trash2 size={16} />
-          Limpar relatos locais
-        </button>
-      )}
 
       {notice && <div className="toast">{notice}</div>}
 
       <footer className="app-footer">
         <Smartphone size={16} />
-        PWA local-first. Cache {lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.
+        Modo consulta. Cache {lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.
       </footer>
     </div>
   );
@@ -531,123 +482,6 @@ function SourcesPanel({ sources }) {
         ))}
       </div>
     </section>
-  );
-}
-
-function ReportPanel({ onClose, onSubmit }) {
-  const [form, setForm] = useState({
-    type: "acidente",
-    severity: "media",
-    title: "",
-    location: "",
-    neighborhood: NEIGHBORHOODS[0],
-  });
-
-  useEffect(() => {
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  function updateField(key, value) {
-    setForm((current) => ({ ...current, [key]: value }));
-  }
-
-  function submit(event) {
-    event.preventDefault();
-    const label = TYPE_LABELS[form.type] ?? "Alerta";
-    onSubmit({
-      ...form,
-      title: form.title.trim() || `${label} em ${form.neighborhood}`,
-      location: form.location.trim() || form.neighborhood,
-    });
-  }
-
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section
-        className="report-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="report-title"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="panel-heading">
-          <div>
-            <p className="eyebrow">Novo alerta</p>
-            <h2 id="report-title">Relatar ocorrencia</h2>
-          </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar">
-            <X size={18} />
-          </button>
-        </div>
-
-        <form onSubmit={submit} className="report-form">
-          <label>
-            Tipo
-            <select value={form.type} onChange={(event) => updateField("type", event.target.value)}>
-              {Object.entries(TYPE_LABELS)
-                .filter(([key]) => key !== "todos" && key !== "historico")
-                .map(([value, label]) => (
-                  <option value={value} key={value}>
-                    {label}
-                  </option>
-                ))}
-            </select>
-          </label>
-
-          <label>
-            Severidade
-            <select value={form.severity} onChange={(event) => updateField("severity", event.target.value)}>
-              {Object.entries(SEVERITY_LABELS).map(([value, label]) => (
-                <option value={value} key={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Bairro
-            <select value={form.neighborhood} onChange={(event) => updateField("neighborhood", event.target.value)}>
-              {NEIGHBORHOODS.map((neighborhood) => (
-                <option value={neighborhood} key={neighborhood}>
-                  {neighborhood}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Titulo
-            <input
-              value={form.title}
-              onChange={(event) => updateField("title", event.target.value)}
-              placeholder="Ex.: Colisao na avenida"
-            />
-          </label>
-
-          <label>
-            Local
-            <input
-              value={form.location}
-              onChange={(event) => updateField("location", event.target.value)}
-              placeholder="Rua, avenida ou referencia"
-            />
-          </label>
-
-          <button className="primary-button full" type="submit">
-            <PlusCircle size={18} />
-            Registrar alerta
-          </button>
-        </form>
-      </section>
-    </div>
   );
 }
 
