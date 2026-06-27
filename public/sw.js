@@ -1,4 +1,4 @@
-const CACHE_NAME = "togs-heads-up-v3";
+const CACHE_NAME = "togs-heads-up-v4";
 const toScopeUrl = (path) => new URL(path, self.registration.scope).toString();
 const INDEX_URL = toScopeUrl("index.html");
 const APP_SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg"].map(toScopeUrl);
@@ -23,8 +23,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
+  const requestUrl = new URL(request.url);
+  const acceptsJson = request.headers.get("accept")?.includes("application/json");
 
   if (request.method !== "GET") {
+    return;
+  }
+
+  if (acceptsJson || requestUrl.pathname.includes("/api/")) {
+    event.respondWith(fetch(request));
     return;
   }
 
