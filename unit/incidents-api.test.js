@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  distanceFromUserKm,
   fetchIncidents,
   getSourceStatuses,
+  haversineKm,
+  mapPositionToCoordinates,
   normalizeGenericPayload,
   normalizeInmetPayload,
   normalizeRss2JsonPayload,
-  normalizeWazePayload,
 } from "../src/services/incidentsApi.js";
 
 const apiSource = {
@@ -44,38 +46,6 @@ test("generic API payload is normalized to dashboard incidents", () => {
   assert.equal(incident.source, "API de alertas");
   assert.ok(incident.position.x >= 0 && incident.position.x <= 100);
   assert.ok(incident.position.y >= 0 && incident.position.y <= 100);
-});
-
-test("waze feed payload is filtered and normalized for Marilia", () => {
-  const incidents = normalizeWazePayload(
-    {
-      alerts: [
-        {
-          uuid: "waze-1",
-          type: "ACCIDENT",
-          street: "Av. Rio Branco",
-          city: "Marilia",
-          confidence: 8,
-          reliability: 9,
-          pubMillis: 1782586800000,
-          location: { x: -49.94, y: -22.21 },
-        },
-        {
-          uuid: "waze-2",
-          type: "ACCIDENT",
-          street: "Av. Paulista",
-          city: "Sao Paulo",
-          location: { x: -46.65, y: -23.56 },
-        },
-      ],
-    },
-    { id: "waze", name: "Waze Partner Feed" },
-  );
-
-  assert.equal(incidents.length, 1);
-  assert.equal(incidents[0].id, "waze-1");
-  assert.equal(incidents[0].type, "acidente");
-  assert.equal(incidents[0].location, "Av. Rio Branco");
 });
 
 test("rss2json regional feed only keeps Marilia safety reports", () => {
@@ -140,7 +110,7 @@ test("inmet active warnings are filtered by Marilia geocode", () => {
   assert.equal(incidents.length, 1);
   assert.equal(incidents[0].id, "inmet-alertas-alerta-marilia");
   assert.equal(incidents[0].type, "risco");
-  assert.equal(incidents[0].location, "Marilia-SP");
+  assert.equal(incidents[0].location, "Marília-SP");
   assert.match(incidents[0].detail, /Chuva intensa/);
 });
 
@@ -160,7 +130,7 @@ test("generic API payload keeps coordinate objects out of visible text", () => {
   );
 
   assert.equal(incident.title, "Buraco na pista");
-  assert.equal(incident.location, "Marilia-SP");
+  assert.equal(incident.location, "Marília-SP");
   assert.equal(incident.neighborhood, "Marilia");
 });
 
@@ -205,14 +175,14 @@ test("fetchIncidents consults real default public APIs without env setup", async
   assert.ok(requestedUrls.some((url) => url.includes("api.rss2json.com")));
   assert.ok(requestedUrls.some((url) => url.includes("apiprevmet3.inmet.gov.br")));
   assert.equal(result.incidents.length, 1);
-  assert.equal(result.incidents[0].source, "G1 Bauru e Marilia");
+  assert.equal(result.incidents[0].source, "G1 Bauru e Marília");
   assert.equal(result.sources.find((source) => source.id === "g1-bauru-marilia").status, "conectado");
 });
 
-test("fetchIncidents consults configured sources without fake fallback", async () => {
+test("fetchIncidents consults a configured custom endpoint without fake fallback", async () => {
   const result = await fetchIncidents({
     env: {
-      VITE_WAZE_FEED_URL: "https://example.test/waze.json",
+      VITE_INCIDENTS_API_URL: "https://example.test/alerts.json",
     },
     fetchImpl: async (url) => {
       if (url.includes("rss2json")) {
@@ -229,18 +199,19 @@ test("fetchIncidents consults configured sources without fake fallback", async (
         };
       }
 
-      assert.equal(url, "https://example.test/waze.json");
+      assert.equal(url, "https://example.test/alerts.json");
       return {
         ok: true,
         json: async () => ({
-          alerts: [
+          incidents: [
             {
-              uuid: "waze-live",
-              type: "HAZARD",
-              street: "Rodovia BR-153",
+              id: "alerts-live",
+              type: "hazard",
+              description: "Buraco na pista",
               city: "Marilia",
               confidence: 7,
-              location: { x: -49.89, y: -22.26 },
+              lat: -22.26,
+              lng: -49.89,
             },
           ],
         }),
@@ -249,8 +220,8 @@ test("fetchIncidents consults configured sources without fake fallback", async (
   });
 
   assert.equal(result.incidents.length, 1);
-  assert.equal(result.incidents[0].id, "waze-live");
-  assert.equal(result.sources.find((source) => source.id === "waze").status, "conectado");
+  assert.equal(result.incidents[0].id, "alerts-live");
+  assert.equal(result.sources.find((source) => source.id === "alerts").status, "conectado");
   assert.deepEqual(result.warnings, []);
 });
 
@@ -264,20 +235,49 @@ test("source statuses reflect configured endpoints", () => {
   assert.equal(statuses.find((source) => source.id === "alerts").status, "conectado");
 });
 
-test("official-only sources are marked indisponivel, not pendente", () => {
-  const statuses = getSourceStatuses({});
+test("removed private sources are no longer listed", () => {
+  const ids = getSourceStatuses({}).map((source) => source.id);
 
-  for (const id of ["waze", "artesp", "sinesp"]) {
-    const source = statuses.find((item) => item.id === id);
-    assert.equal(source.status, "indisponivel");
-    assert.notEqual(source.detail, "Aguardando endpoint de integracao.");
+  for (const removed of ["waze", "artesp", "sinesp"]) {
+    assert.ok(!ids.includes(removed), `${removed} should be removed`);
   }
-
-  // INFOSIGA is a configurable env source, so it stays pendente until a URL is provided.
-  assert.equal(statuses.find((source) => source.id === "infosiga").status, "pendente");
 });
 
-test("an official source upgrades to conectado when an endpoint is configured", () => {
-  const statuses = getSourceStatuses({ VITE_WAZE_FEED_URL: "https://example.test/waze.json" });
-  assert.equal(statuses.find((source) => source.id === "waze").status, "conectado");
+test("an env source stays pendente until an endpoint is configured", () => {
+  assert.equal(
+    getSourceStatuses({}).find((source) => source.id === "infosiga").status,
+    "pendente",
+  );
+  assert.equal(
+    getSourceStatuses({ VITE_INFOSIGA_API_URL: "https://example.test/infosiga.json" }).find(
+      (source) => source.id === "infosiga",
+    ).status,
+    "conectado",
+  );
+});
+
+test("haversineKm measures real distance and handles invalid input", () => {
+  const center = { lat: -22.21, lng: -49.94 };
+  assert.equal(haversineKm(center, center), 0);
+  assert.equal(haversineKm(null, center), null);
+  assert.equal(haversineKm(center, { lat: Number.NaN, lng: -49.9 }), null);
+
+  // ~1 degree of latitude is roughly 111 km.
+  const oneDegreeNorth = haversineKm(center, { lat: -21.21, lng: -49.94 });
+  assert.ok(oneDegreeNorth > 105 && oneDegreeNorth < 115);
+});
+
+test("mapPositionToCoordinates stays inside Marilia bounds", () => {
+  const center = mapPositionToCoordinates({ x: 50, y: 50 });
+  assert.ok(center.lat > -22.36 && center.lat < -22.08);
+  assert.ok(center.lng > -50.08 && center.lng < -49.74);
+});
+
+test("distanceFromUserKm returns a finite distance when a user location is given", () => {
+  const incident = { position: { x: 50, y: 50 } };
+  const user = mapPositionToCoordinates({ x: 20, y: 80 });
+
+  assert.equal(distanceFromUserKm(incident, null), null);
+  const distance = distanceFromUserKm(incident, user);
+  assert.ok(Number.isFinite(distance) && distance > 0);
 });

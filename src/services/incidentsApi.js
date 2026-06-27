@@ -15,7 +15,7 @@ const NEIGHBORHOOD_POSITIONS = [
   { name: "Jardim Aquarius", terms: ["jardim aquarius", "aquarius"], position: { x: 36, y: 35 } },
   { name: "Cascata", terms: ["cascata"], position: { x: 42, y: 64 } },
   { name: "Fragata", terms: ["fragata"], position: { x: 28, y: 58 } },
-  { name: "Padre Nobrega", terms: ["padre nobrega", "nobrega"], position: { x: 73, y: 31 } },
+  { name: "Padre Nóbrega", terms: ["padre nobrega", "nobrega"], position: { x: 73, y: 31 } },
   { name: "Rodovia BR-153", terms: ["br-153", "rodovia transbrasiliana"], position: { x: 58, y: 67 } },
   { name: "SP-294", terms: ["sp-294", "comandante joao ribeiro de barros"], position: { x: 62, y: 45 } },
 ];
@@ -297,7 +297,7 @@ function inferPositionFromText(text) {
 }
 
 function inferLocationFromText(text) {
-  return inferNeighborhood(text)?.name ?? "Marilia-SP";
+  return inferNeighborhood(text)?.name ?? "Marília-SP";
 }
 
 function inferSeverityFromText(text) {
@@ -326,10 +326,10 @@ function buildTitle(raw, type) {
   const street = firstReadableText(raw.street, raw.road, raw.address, raw.locationName);
   const typeLabel = {
     acidente: "Acidente",
-    policial: "Ocorrencia policial",
+    policial: "Ocorrência policial",
     risco: "Risco reportado",
-    rodovia: "Ocorrencia rodoviaria",
-    historico: "Registro historico",
+    rodovia: "Ocorrência rodoviária",
+    historico: "Registro histórico",
   }[type];
 
   return street ? `${typeLabel} em ${street}` : typeLabel;
@@ -347,7 +347,7 @@ export function normalizeGenericPayload(payload, source) {
       const title = firstReadableText(raw.title, raw.name, raw.description, raw.summary) || buildTitle(raw, type);
       const location =
         firstReadableText(raw.locationText, raw.location_name, raw.address, raw.street, raw.road, raw.locationName) ||
-        "Marilia-SP";
+        "Marília-SP";
       const occurredAt = parseTimestamp(
         raw.occurredAt ?? raw.createdAt ?? raw.updatedAt ?? raw.date ?? raw.timestamp ?? raw.pubMillis,
       );
@@ -358,42 +358,10 @@ export function normalizeGenericPayload(payload, source) {
         type,
         title,
         location,
-        neighborhood: firstReadableText(raw.neighborhood, raw.district, raw.bairro, raw.city) || "Marilia-SP",
+        neighborhood: firstReadableText(raw.neighborhood, raw.district, raw.bairro, raw.city) || "Marília-SP",
         source: source.name,
         status: normalizeStatus(raw.status ?? raw.state),
         severity: normalizeSeverity(raw.severity ?? raw.level ?? raw.impact ?? raw.reportRating),
-        confidence: normalizeConfidence(raw.confidence ?? raw.reliability ?? raw.reportRating),
-        occurredAt,
-        position: projectToMapPosition(coordinates),
-      };
-    })
-    .filter(Boolean);
-}
-
-export function normalizeWazePayload(payload, source) {
-  return toArray(payload)
-    .map((alert, index) => {
-      const raw = getPropertyBag(alert);
-      const coordinates = readCoordinates(raw);
-      const city = normalizeText(raw.city ?? raw.location?.city);
-
-      if (city && !city.toLocaleLowerCase("pt-BR").includes("mar")) return null;
-      if (!isInsideMarilia(coordinates)) return null;
-
-      const type = normalizeType(`${raw.type ?? ""} ${raw.subtype ?? ""}`);
-      const street = normalizeText(raw.street ?? raw.road, "Marilia-SP");
-      const occurredAt = parseTimestamp(raw.pubMillis ?? raw.createdAt ?? raw.updatedAt);
-      const title = normalizeText(raw.reportDescription ?? raw.description, buildTitle({ street }, type));
-
-      return {
-        id: normalizeText(raw.uuid ?? raw.id, `${source.id}-${index}-${hashText(`${title}-${occurredAt}`)}`),
-        type,
-        title,
-        location: street,
-        neighborhood: normalizeText(raw.city, "Marilia-SP"),
-        source: source.name,
-        status: "ativo",
-        severity: normalizeSeverity(raw.reportRating ?? raw.reliability),
         confidence: normalizeConfidence(raw.confidence ?? raw.reliability ?? raw.reportRating),
         occurredAt,
         position: projectToMapPosition(coordinates),
@@ -460,15 +428,15 @@ export function normalizeInmetPayload(payload, source) {
     .map((alert) => {
       const startedAt = parseTimestamp(`${normalizeText(alert.data_inicio).slice(0, 10)} ${alert.hora_inicio ?? "00:00"}`);
       const finishedAt = parseTimestamp(`${normalizeText(alert.data_fim).slice(0, 10)} ${alert.hora_fim ?? "23:59"}`);
-      const description = stripHtml(alert.descricao || "Aviso meteorologico");
+      const description = stripHtml(alert.descricao || "Aviso meteorológico");
       const risks = toArray(alert.riscos).join(" ");
 
       return {
         id: `${source.id}-${alert.codigo ?? alert.id}`,
         type: "risco",
-        title: `${description} em Marilia-SP`,
-        location: "Marilia-SP",
-        neighborhood: "Marilia-SP",
+        title: `${description} em Marília-SP`,
+        location: "Marília-SP",
+        neighborhood: "Marília-SP",
         source: source.name,
         status: new Date(finishedAt).getTime() >= Date.now() ? "ativo" : "historico",
         severity: normalizeInmetSeverity(alert),
@@ -489,29 +457,55 @@ export function getConfiguredSources(env = readViteEnv()) {
 }
 
 export function getSourceStatuses(env = readViteEnv()) {
-  return getConfiguredSources(env).map((source) => {
-    if (source.url) {
-      return {
-        id: source.id,
-        name: source.name,
-        cadence: source.cadence,
-        status: "conectado",
-        detail: `${source.detail} Cadencia esperada: ${source.cadence}.`,
-      };
-    }
+  return getConfiguredSources(env).map((source) => ({
+    id: source.id,
+    name: source.name,
+    cadence: source.cadence,
+    status: source.url ? "conectado" : "pendente",
+    detail: source.url
+      ? `${source.detail} Cadência esperada: ${source.cadence}.`
+      : "Aguardando endpoint de integração.",
+  }));
+}
 
-    const requiresOfficialAccess = source.access === "oficial";
+const EARTH_RADIUS_KM = 6371;
 
-    return {
-      id: source.id,
-      name: source.name,
-      cadence: source.cadence,
-      status: requiresOfficialAccess ? "indisponivel" : "pendente",
-      detail: requiresOfficialAccess
-        ? source.accessNote ?? "Requer credencial ou parceria oficial."
-        : "Aguardando endpoint de integracao.",
-    };
-  });
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+export function mapPositionToCoordinates({ x, y } = {}) {
+  const px = clamp(Number(x));
+  const py = clamp(Number(y));
+
+  return {
+    lng: MARILIA_BOUNDS.minLng + (px / 100) * (MARILIA_BOUNDS.maxLng - MARILIA_BOUNDS.minLng),
+    lat: MARILIA_BOUNDS.maxLat - (py / 100) * (MARILIA_BOUNDS.maxLat - MARILIA_BOUNDS.minLat),
+  };
+}
+
+export function coordinatesToMapPosition(coordinates) {
+  return projectToMapPosition(coordinates ?? {});
+}
+
+export function haversineKm(from, to) {
+  if (!from || !to) return null;
+  if (![from.lat, from.lng, to.lat, to.lng].every((value) => Number.isFinite(Number(value)))) {
+    return null;
+  }
+
+  const dLat = toRadians(to.lat - from.lat);
+  const dLng = toRadians(to.lng - from.lng);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(from.lat)) * Math.cos(toRadians(to.lat)) * Math.sin(dLng / 2) ** 2;
+
+  return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function distanceFromUserKm(incident, userLocation) {
+  if (!userLocation || !incident?.position) return null;
+  return haversineKm(userLocation, mapPositionToCoordinates(incident.position));
 }
 
 function mergeSignals(parentSignal, timeoutMs) {
@@ -567,10 +561,6 @@ function parseBySource(payload, source) {
 
   if (source.parser === "inmet") {
     return normalizeInmetPayload(payload, source);
-  }
-
-  if (source.parser === "waze") {
-    return normalizeWazePayload(payload, source);
   }
 
   return normalizeGenericPayload(payload, source);
@@ -633,7 +623,7 @@ export async function fetchIncidents({
         detail:
           response.value.incidents.length > 0
             ? `${response.value.incidents.length} alerta(s) real(is) recebido(s).`
-            : "API respondeu, mas nao retornou alertas para Marilia-SP.",
+            : "API respondeu, mas não retornou alertas para Marília-SP.",
       });
       continue;
     }
@@ -652,6 +642,6 @@ export async function fetchIncidents({
       ...(sourceResults.get(source.id) ?? {}),
     })),
     fetchedAt: new Date().toISOString(),
-    warnings: incidents.length === 0 ? ["As APIs configuradas nao retornaram alertas reais para Marilia-SP."] : [],
+    warnings: incidents.length === 0 ? ["As APIs configuradas não retornaram alertas reais para Marília-SP."] : [],
   };
 }
