@@ -1,5 +1,7 @@
-const CACHE_NAME = "togs-heads-up-v1";
-const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest", "/icon.svg"];
+const CACHE_NAME = "togs-heads-up-v2";
+const toScopeUrl = (path) => new URL(path, self.registration.scope).toString();
+const INDEX_URL = toScopeUrl("index.html");
+const APP_SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg"].map(toScopeUrl);
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -27,7 +29,7 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("/index.html")));
+    event.respondWith(fetch(request).catch(() => caches.match(INDEX_URL)));
     return;
   }
 
@@ -38,6 +40,10 @@ self.addEventListener("fetch", (event) => {
       }
 
       return fetch(request).then((response) => {
+        if (!response || !response.ok) {
+          return response;
+        }
+
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
         return response;

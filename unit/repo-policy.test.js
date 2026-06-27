@@ -58,3 +58,24 @@ test("project context records stack decision", () => {
   assert.match(context, /## Alternativas Rejeitadas/);
   assert.match(context, /Revisao Obrigatoria De Stack/);
 });
+
+test("github pages deployment builds vite output for repository subpath", () => {
+  const viteConfig = read("vite.config.js");
+  const index = read("index.html");
+  const manifest = read("public/manifest.webmanifest");
+  const serviceWorker = read("public/sw.js");
+  const workflow = read(".github/workflows/deploy-pages.yml");
+
+  assert.match(viteConfig, /\/Togs-heads-up\//);
+  assert.match(index, /%BASE_URL%manifest\.webmanifest/);
+  assert.match(index, /%BASE_URL%icon\.svg/);
+  assert.match(manifest, /"start_url": "\.\/"/);
+  assert.match(manifest, /"scope": "\.\/"/);
+  assert.match(serviceWorker, /togs-heads-up-v2/);
+  assert.match(serviceWorker, /self\.registration\.scope/);
+  assert.match(workflow, /branches:\s*\n\s*- develop/);
+  assert.match(workflow, /npm ci/);
+  assert.match(workflow, /npm run build/);
+  assert.match(workflow, /actions\/upload-pages-artifact/);
+  assert.match(workflow, /actions\/deploy-pages/);
+});
