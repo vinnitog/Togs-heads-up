@@ -729,6 +729,12 @@ select:focus-visible {
   background: #eef2f7;
 }
 
+.source-status.indisponivel {
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px dashed #cbd5e1;
+}
+
 .source-status.erro {
   color: #991b1b;
   background: var(--danger-soft);

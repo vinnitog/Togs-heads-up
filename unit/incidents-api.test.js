@@ -258,7 +258,26 @@ test("source statuses reflect configured endpoints", () => {
   const statuses = getSourceStatuses({ VITE_INCIDENTS_API_URL: "https://example.test/incidents" });
 
   assert.equal(statuses.find((source) => source.id === "g1-bauru-marilia").status, "conectado");
+  assert.equal(statuses.find((source) => source.id === "giro-marilia").status, "conectado");
+  assert.equal(statuses.find((source) => source.id === "gmc-online").status, "conectado");
   assert.equal(statuses.find((source) => source.id === "inmet-alertas").status, "conectado");
   assert.equal(statuses.find((source) => source.id === "alerts").status, "conectado");
-  assert.equal(statuses.find((source) => source.id === "waze").status, "pendente");
+});
+
+test("official-only sources are marked indisponivel, not pendente", () => {
+  const statuses = getSourceStatuses({});
+
+  for (const id of ["waze", "artesp", "sinesp"]) {
+    const source = statuses.find((item) => item.id === id);
+    assert.equal(source.status, "indisponivel");
+    assert.notEqual(source.detail, "Aguardando endpoint de integracao.");
+  }
+
+  // INFOSIGA is a configurable env source, so it stays pendente until a URL is provided.
+  assert.equal(statuses.find((source) => source.id === "infosiga").status, "pendente");
+});
+
+test("an official source upgrades to conectado when an endpoint is configured", () => {
+  const statuses = getSourceStatuses({ VITE_WAZE_FEED_URL: "https://example.test/waze.json" });
+  assert.equal(statuses.find((source) => source.id === "waze").status, "conectado");
 });

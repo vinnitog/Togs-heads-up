@@ -489,13 +489,29 @@ export function getConfiguredSources(env = readViteEnv()) {
 }
 
 export function getSourceStatuses(env = readViteEnv()) {
-  return getConfiguredSources(env).map((source) => ({
-    id: source.id,
-    name: source.name,
-    cadence: source.cadence,
-    status: source.url ? "conectado" : "pendente",
-    detail: source.url ? `${source.detail} Cadencia esperada: ${source.cadence}.` : "Aguardando endpoint de integracao.",
-  }));
+  return getConfiguredSources(env).map((source) => {
+    if (source.url) {
+      return {
+        id: source.id,
+        name: source.name,
+        cadence: source.cadence,
+        status: "conectado",
+        detail: `${source.detail} Cadencia esperada: ${source.cadence}.`,
+      };
+    }
+
+    const requiresOfficialAccess = source.access === "oficial";
+
+    return {
+      id: source.id,
+      name: source.name,
+      cadence: source.cadence,
+      status: requiresOfficialAccess ? "indisponivel" : "pendente",
+      detail: requiresOfficialAccess
+        ? source.accessNote ?? "Requer credencial ou parceria oficial."
+        : "Aguardando endpoint de integracao.",
+    };
+  });
 }
 
 function mergeSignals(parentSignal, timeoutMs) {
