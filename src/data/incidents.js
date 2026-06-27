@@ -1,3 +1,5 @@
+import { OPEN_METEO_SOURCE } from "../services/weatherSource.js";
+
 const rss2json = (rssUrl) => `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`;
 
 const G1_RSS_JSON_URL = rss2json("https://g1.globo.com/rss/g1/sp/bauru-marilia/");
@@ -37,6 +39,7 @@ export const INCIDENT_API_SOURCES = [
     parser: "inmet",
     detail: "Avisos meteorológicos oficiais ativos filtrados pelo geocódigo de Marília.",
   },
+  OPEN_METEO_SOURCE,
   {
     id: "alerts",
     name: "API de alertas",

@@ -1,4 +1,5 @@
 import { INCIDENT_API_SOURCES } from "../data/incidents.js";
+import { normalizeOpenMeteoPayload } from "./weatherSource.js";
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const MARILIA_IBGE_CODE = "3529005";
@@ -561,6 +562,10 @@ function parseBySource(payload, source) {
 
   if (source.parser === "inmet") {
     return normalizeInmetPayload(payload, source);
+  }
+
+  if (source.parser === "openmeteo") {
+    return normalizeOpenMeteoPayload(payload, source);
   }
 
   return normalizeGenericPayload(payload, source);
