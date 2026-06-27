@@ -73,7 +73,8 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(manifest, /"scope": "\.\/"/);
   assert.match(serviceWorker, /togs-heads-up-v2/);
   assert.match(serviceWorker, /self\.registration\.scope/);
-  assert.match(workflow, /branches:\s*\n\s*- develop/);
+  assert.match(workflow, /branches:\s*\n\s*- main\s*\n\s*- develop/);
+  assert.match(workflow, /node-version: 22/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm run build/);
   assert.match(workflow, /actions\/upload-pages-artifact/);
