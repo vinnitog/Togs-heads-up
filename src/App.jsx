@@ -54,9 +54,11 @@ const DATA_DISCLOSURE =
 const SOURCE_BADGE_LABELS = {
   conectado: "Conectada",
   pendente: "Pendente",
+  indisponivel: "Sem acesso",
   erro: "Erro",
   "sem-dados": "Sem dados",
 };
+const UNCONFIGURED_SOURCE_STATUSES = ["pendente", "indisponivel"];
 
 const INCIDENT_ICONS = {
   acidente: Car,
@@ -140,7 +142,9 @@ function App() {
   const typeChartData = useMemo(() => getTypeChartData(incidents), [incidents]);
   const timeWindowData = useMemo(() => getTimeWindowData(incidents), [incidents]);
   const hotspots = useMemo(() => getHotspots(incidents), [incidents]);
-  const hasConfiguredSource = sources.some((source) => source.status !== "pendente");
+  const hasConfiguredSource = sources.some(
+    (source) => !UNCONFIGURED_SOURCE_STATUSES.includes(source.status),
+  );
 
   function updateFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value }));
