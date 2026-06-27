@@ -124,11 +124,6 @@ select:focus-visible {
   white-space: nowrap;
 }
 
-.connection-pill.online {
-  color: #d1fae5;
-  background: rgba(15, 118, 110, 0.24);
-}
-
 .connection-pill.offline {
   color: #fee2e2;
   background: rgba(220, 38, 38, 0.24);
