@@ -65,6 +65,7 @@ test("github pages deployment builds vite output for repository subpath", () => 
   const manifest = read("public/manifest.webmanifest");
   const serviceWorker = read("public/sw.js");
   const workflow = read(".github/workflows/deploy-pages.yml");
+  const packageJson = read("package.json");
 
   assert.match(viteConfig, /\/Togs-heads-up\//);
   assert.match(index, /%BASE_URL%manifest\.webmanifest/);
@@ -73,7 +74,10 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(manifest, /"scope": "\.\/"/);
   assert.match(serviceWorker, /togs-heads-up-v2/);
   assert.match(serviceWorker, /self\.registration\.scope/);
-  assert.match(workflow, /branches:\s*\n\s*- develop/);
+  assert.match(workflow, /branches:\s*\n\s*- main\s*\n\s*- develop/);
+  assert.match(packageJson, /"packageManager": "npm@11\.6\.2"/);
+  assert.match(workflow, /node-version: 24/);
+  assert.match(workflow, /npm install -g npm@11\.6\.2/);
   assert.match(workflow, /npm ci/);
   assert.match(workflow, /npm run build/);
   assert.match(workflow, /actions\/upload-pages-artifact/);

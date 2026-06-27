@@ -3,6 +3,7 @@ name: Deploy GitHub Pages
 on:
   push:
     branches:
+      - main
       - develop
   workflow_dispatch:
 
@@ -27,6 +28,9 @@ jobs:
         with:
           node-version: 24
           cache: npm
+
+      - name: Use locked npm version
+        run: npm install -g npm@11.6.2
 
       - name: Install dependencies
         run: npm ci
