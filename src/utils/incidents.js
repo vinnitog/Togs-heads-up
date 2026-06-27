@@ -4,19 +4,19 @@ export const TYPE_LABELS = {
   policial: "Policial",
   risco: "Riscos",
   rodovia: "Rodovias",
-  historico: "Historico",
+  historico: "Histórico",
 };
 
 export const STATUS_LABELS = {
   todos: "Todos",
   ativo: "Ativos",
   monitorado: "Monitorados",
-  historico: "Historicos",
+  historico: "Históricos",
 };
 
 export const SEVERITY_LABELS = {
   baixa: "Baixa",
-  media: "Media",
+  media: "Média",
   alta: "Alta",
 };
 
@@ -67,13 +67,20 @@ export function getRiskBand(score) {
 }
 
 export function formatAge(minutes) {
-  if (!Number.isFinite(minutes)) return "sem horario";
+  if (!Number.isFinite(minutes)) return "sem horário";
   if (minutes < 1) return "agora";
   if (minutes < 60) return `${minutes} min`;
 
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest ? `${hours}h ${rest}min` : `${hours}h`;
+}
+
+export function formatDistance(km) {
+  if (!Number.isFinite(km)) return "";
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  if (km < 10) return `${km.toFixed(1)} km`;
+  return `${Math.round(km)} km`;
 }
 
 export function filterIncidents(incidents, filters) {
