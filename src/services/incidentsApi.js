@@ -549,7 +549,23 @@ async function fetchJson(source, { fetchImpl, signal, timeoutMs }) {
       throw new Error(`HTTP ${response.status}`);
     }
 
-    return response.json();
+    if (typeof response.text !== "function") {
+      return response.json();
+    }
+
+    const body = await response.text();
+    if (!body.trim()) return null;
+
+    try {
+      return JSON.parse(body);
+    } catch {
+      // Algumas APIs publicas (ex.: INMET) devolvem, de forma intermitente, uma
+      // pagina HTML/texto de bloqueio ou manutencao no lugar do JSON. Tratamos
+      // isso como instabilidade transitoria, sem vazar o conteudo bruto para a UI.
+      const transient = new Error("resposta em formato inesperado (servico instavel)");
+      transient.transient = true;
+      throw transient;
+    }
   } finally {
     request.cleanup();
   }
@@ -634,9 +650,19 @@ export async function fetchIncidents({
     }
 
     const failedSource = configuredSources[responses.indexOf(response)];
+    const reason = response.reason;
+
+    if (reason?.transient) {
+      sourceResults.set(failedSource.id, {
+        status: "sem-dados",
+        detail: `${failedSource.name} indisponível no momento (instabilidade do serviço). Nova tentativa no próximo ciclo.`,
+      });
+      continue;
+    }
+
     sourceResults.set(failedSource.id, {
       status: "erro",
-      detail: `Falha ao consultar ${failedSource.name}: ${response.reason?.message ?? "erro desconhecido"}.`,
+      detail: `Falha ao consultar ${failedSource.name}: ${reason?.message ?? "erro desconhecido"}.`,
     });
   }
 

@@ -281,3 +281,41 @@ test("distanceFromUserKm returns a finite distance when a user location is given
   const distance = distanceFromUserKm(incident, user);
   assert.ok(Number.isFinite(distance) && distance > 0);
 });
+
+test("a non-JSON upstream page is reported as sem-dados, not erro", async () => {
+  const result = await fetchIncidents({
+    env: {},
+    fetchImpl: async (url) => {
+      if (url.includes("apiprevmet3.inmet.gov.br")) {
+        return {
+          ok: true,
+          text: async () => "Você está sendo redirecionado...<html></html>",
+        };
+      }
+
+      return { ok: true, text: async () => JSON.stringify({ items: [] }) };
+    },
+  });
+
+  const inmet = result.sources.find((source) => source.id === "inmet-alertas");
+  assert.equal(inmet.status, "sem-dados");
+  assert.doesNotMatch(inmet.detail, /Você está/);
+  assert.doesNotMatch(inmet.detail, /JSON/);
+});
+
+test("a real HTTP failure is still reported as erro", async () => {
+  const result = await fetchIncidents({
+    env: {},
+    fetchImpl: async (url) => {
+      if (url.includes("apiprevmet3.inmet.gov.br")) {
+        return { ok: false, status: 502, text: async () => "" };
+      }
+
+      return { ok: true, text: async () => JSON.stringify({ items: [] }) };
+    },
+  });
+
+  const inmet = result.sources.find((source) => source.id === "inmet-alertas");
+  assert.equal(inmet.status, "erro");
+  assert.match(inmet.detail, /HTTP 502/);
+});
