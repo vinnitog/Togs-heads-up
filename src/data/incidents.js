@@ -1,16 +1,5 @@
 const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60 * 1000).toISOString();
 
-export const NEIGHBORHOODS = [
-  "Centro",
-  "Jardim Aquarius",
-  "Cascata",
-  "Fragata",
-  "Palmital",
-  "Nova Marilia",
-  "Padre Nobrega",
-  "Rodovia BR-153",
-];
-
 export const SOURCE_STATUS = [
   {
     id: "waze",
@@ -56,7 +45,7 @@ export const SEED_INCIDENTS = [
     title: "Colisao com lentidao",
     location: "Av. Sampaio Vidal, proximo ao Centro",
     neighborhood: "Centro",
-    source: "Relato comunitario",
+    source: "Dado demonstrativo",
     status: "ativo",
     severity: "alta",
     confidence: 8,
@@ -69,7 +58,7 @@ export const SEED_INCIDENTS = [
     title: "Trecho com baixa visibilidade",
     location: "Acesso ao distrito de Padre Nobrega",
     neighborhood: "Padre Nobrega",
-    source: "Monitoramento local",
+    source: "Dado demonstrativo",
     status: "monitorado",
     severity: "media",
     confidence: 6,
@@ -82,7 +71,7 @@ export const SEED_INCIDENTS = [
     title: "Ocorrencia policial em apuracao",
     location: "Regiao do Jardim Aquarius",
     neighborhood: "Jardim Aquarius",
-    source: "Relato comunitario",
+    source: "Dado demonstrativo",
     status: "ativo",
     severity: "media",
     confidence: 5,
@@ -95,7 +84,7 @@ export const SEED_INCIDENTS = [
     title: "Atencao no fluxo rodoviario",
     location: "BR-153, perimetro urbano de Marilia",
     neighborhood: "Rodovia BR-153",
-    source: "ARTESP/rodovia",
+    source: "Dado demonstrativo",
     status: "monitorado",
     severity: "alta",
     confidence: 7,
@@ -108,7 +97,7 @@ export const SEED_INCIDENTS = [
     title: "Ponto com historico de acidentes",
     location: "Eixo Fragata-Cascata",
     neighborhood: "Fragata",
-    source: "INFOSIGA",
+    source: "Dado demonstrativo",
     status: "historico",
     severity: "media",
     confidence: 8,
@@ -121,7 +110,7 @@ export const SEED_INCIDENTS = [
     title: "Semaforo intermitente",
     location: "Av. Tiradentes, sentido bairro",
     neighborhood: "Cascata",
-    source: "Relato comunitario",
+    source: "Dado demonstrativo",
     status: "ativo",
     severity: "baixa",
     confidence: 6,
