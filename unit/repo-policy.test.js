@@ -72,7 +72,7 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(index, /%BASE_URL%icon\.svg/);
   assert.match(manifest, /"start_url": "\.\/"/);
   assert.match(manifest, /"scope": "\.\/"/);
-  assert.match(serviceWorker, /togs-heads-up-v4/);
+  assert.match(serviceWorker, /togs-heads-up-v5/);
   assert.match(serviceWorker, /application\/json/);
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /self\.registration\.scope/);
@@ -97,5 +97,8 @@ test("app is consult only and uses API data without fake incidents", () => {
   assert.doesNotMatch(data, /SEED_INCIDENTS|Dado demonstrativo/);
   assert.match(app, /fetchIncidents/);
   assert.match(data, /VITE_INCIDENTS_API_URL/);
-  assert.match(api, /Nenhuma API real configurada/);
+  assert.match(data, /api\.rss2json\.com/);
+  assert.match(data, /apiprevmet3\.inmet\.gov\.br/);
+  assert.match(api, /normalizeRss2JsonPayload/);
+  assert.match(api, /normalizeInmetPayload/);
 });

@@ -1,12 +1,54 @@
 import { INCIDENT_API_SOURCES } from "../data/incidents.js";
 
 const DEFAULT_TIMEOUT_MS = 10000;
+const MARILIA_IBGE_CODE = "3529005";
 const MARILIA_BOUNDS = {
   minLat: -22.36,
   maxLat: -22.08,
   minLng: -50.08,
   maxLng: -49.74,
 };
+const MARILIA_DEFAULT_POSITION = { x: 50, y: 50 };
+const NEIGHBORHOOD_POSITIONS = [
+  { name: "Alto Cafezal", terms: ["alto cafezal"], position: { x: 45, y: 52 } },
+  { name: "Centro", terms: ["centro"], position: { x: 49, y: 48 } },
+  { name: "Jardim Aquarius", terms: ["jardim aquarius", "aquarius"], position: { x: 36, y: 35 } },
+  { name: "Cascata", terms: ["cascata"], position: { x: 42, y: 64 } },
+  { name: "Fragata", terms: ["fragata"], position: { x: 28, y: 58 } },
+  { name: "Padre Nobrega", terms: ["padre nobrega", "nobrega"], position: { x: 73, y: 31 } },
+  { name: "Rodovia BR-153", terms: ["br-153", "rodovia transbrasiliana"], position: { x: 58, y: 67 } },
+  { name: "SP-294", terms: ["sp-294", "comandante joao ribeiro de barros"], position: { x: 62, y: 45 } },
+];
+const RSS_SAFETY_TERMS = [
+  "acidente",
+  "atropel",
+  "batida",
+  "bloqueio",
+  "capot",
+  "colis",
+  "congestion",
+  "crime",
+  "criminos",
+  "desab",
+  "furto",
+  "homicidio",
+  "interdit",
+  "incendio",
+  "morre",
+  "morto",
+  "ocorrencia",
+  "policia",
+  "policial",
+  "preso",
+  "prisao",
+  "rodovia",
+  "roubo",
+  "suspeito",
+  "tiro",
+  "transito",
+  "tomba",
+  "vitima",
+];
 
 function readViteEnv() {
   return typeof import.meta !== "undefined" && import.meta.env ? import.meta.env : {};
@@ -21,6 +63,32 @@ function normalizeText(value, fallback = "") {
   return String(value).trim() || fallback;
 }
 
+function normalizeSearchText(value) {
+  return normalizeText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR");
+}
+
+function stripHtml(value) {
+  return normalizeText(value)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanRssText(value) {
+  return stripHtml(value)
+    .replace(/Participe do canal.*?WhatsApp/gi, " ")
+    .replace(/Initial plugin text.*$/i, " ")
+    .replace(/Veja mais noticias.*$/i, " ")
+    .replace(/Veja mais not.cias.*$/i, " ")
+    .replace(/VIDEOS:.*$/i, " ")
+    .replace(/V.DEOS:.*$/i, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function firstReadableText(...values) {
   for (const value of values) {
     if (typeof value !== "string" && typeof value !== "number") continue;
@@ -29,6 +97,11 @@ function firstReadableText(...values) {
   }
 
   return "";
+}
+
+function textIncludesAny(text, terms) {
+  const normalized = normalizeSearchText(text);
+  return terms.some((term) => normalized.includes(normalizeSearchText(term)));
 }
 
 function toArray(payload) {
@@ -62,6 +135,11 @@ function parseTimestamp(value) {
     return new Date(millis).toISOString();
   }
 
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(value)) {
+    const date = new Date(`${value.replace(" ", "T")}Z`);
+    return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  }
+
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
@@ -69,15 +147,42 @@ function parseTimestamp(value) {
 function normalizeType(value = "") {
   const type = String(value).toLocaleLowerCase("pt-BR");
 
-  if (type.includes("accident") || type.includes("acidente") || type.includes("crash") || type.includes("colis")) {
+  if (
+    type.includes("accident") ||
+    type.includes("acidente") ||
+    type.includes("atropel") ||
+    type.includes("batida") ||
+    type.includes("capot") ||
+    type.includes("crash") ||
+    type.includes("colis") ||
+    type.includes("tomba")
+  ) {
     return "acidente";
   }
 
-  if (type.includes("police") || type.includes("policial") || type.includes("crime") || type.includes("seguranca")) {
+  if (
+    type.includes("police") ||
+    type.includes("policia") ||
+    type.includes("policial") ||
+    type.includes("crime") ||
+    type.includes("preso") ||
+    type.includes("prisao") ||
+    type.includes("seguranca") ||
+    type.includes("suspeito") ||
+    type.includes("tiro")
+  ) {
     return "policial";
   }
 
-  if (type.includes("road") || type.includes("jam") || type.includes("traffic") || type.includes("rodovia")) {
+  if (
+    type.includes("road") ||
+    type.includes("jam") ||
+    type.includes("traffic") ||
+    type.includes("rodovia") ||
+    type.includes("sp-") ||
+    type.includes("br-") ||
+    type.includes("transito")
+  ) {
     return "rodovia";
   }
 
@@ -170,10 +275,7 @@ function isInsideMarilia({ lat, lng }) {
 
 function projectToMapPosition({ lat, lng }) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return {
-      x: 50,
-      y: 50,
-    };
+    return MARILIA_DEFAULT_POSITION;
   }
 
   const x = ((lng - MARILIA_BOUNDS.minLng) / (MARILIA_BOUNDS.maxLng - MARILIA_BOUNDS.minLng)) * 100;
@@ -183,6 +285,37 @@ function projectToMapPosition({ lat, lng }) {
     x: clamp(Math.round(x), 8, 92),
     y: clamp(Math.round(y), 8, 92),
   };
+}
+
+function inferNeighborhood(text) {
+  const normalized = normalizeSearchText(text);
+  return NEIGHBORHOOD_POSITIONS.find((item) => item.terms.some((term) => normalized.includes(term)));
+}
+
+function inferPositionFromText(text) {
+  return inferNeighborhood(text)?.position ?? MARILIA_DEFAULT_POSITION;
+}
+
+function inferLocationFromText(text) {
+  return inferNeighborhood(text)?.name ?? "Marilia-SP";
+}
+
+function inferSeverityFromText(text) {
+  const normalized = normalizeSearchText(text);
+
+  if (
+    ["morre", "morto", "grave", "homicidio", "tiro", "interdit", "desab", "incendio", "alagamento"].some((term) =>
+      normalized.includes(term),
+    )
+  ) {
+    return "alta";
+  }
+
+  if (["preso", "prisao", "suspeito", "roubo", "furto", "rodovia", "tomba"].some((term) => normalized.includes(term))) {
+    return "media";
+  }
+
+  return "baixa";
 }
 
 function getPropertyBag(raw) {
@@ -269,10 +402,89 @@ export function normalizeWazePayload(payload, source) {
     .filter(Boolean);
 }
 
+export function normalizeRss2JsonPayload(payload, source) {
+  return toArray(payload)
+    .map((item, index) => {
+      const title = stripHtml(item.title);
+      const summary = cleanRssText(item.description ?? item.content);
+      const searchable = `${title} ${summary}`;
+
+      if (!textIncludesAny(searchable, ["marilia", "marilia-sp", "alto cafezal", "br-153", "sp-294"])) return null;
+      if (!textIncludesAny(searchable, RSS_SAFETY_TERMS)) return null;
+
+      const type = normalizeType(searchable);
+      const occurredAt = parseTimestamp(item.pubDate ?? item.isoDate ?? item.date);
+      const location = inferLocationFromText(searchable);
+
+      return {
+        id: normalizeText(item.guid ?? item.link, `${source.id}-${index}-${hashText(`${title}-${occurredAt}`)}`),
+        type,
+        title,
+        location,
+        neighborhood: location,
+        source: source.name,
+        status: getIncidentAgeMinutesFromIso(occurredAt) <= 1440 ? "ativo" : "monitorado",
+        severity: inferSeverityFromText(searchable),
+        confidence: 7,
+        occurredAt,
+        position: inferPositionFromText(searchable),
+        url: normalizeText(item.link),
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeInmetSeverity(alert) {
+  const severityText = normalizeSearchText(`${alert.severidade ?? ""} ${alert.aviso_cor ?? ""}`);
+
+  if (severityText.includes("grande perigo") || severityText.includes("ff0000")) return "alta";
+  if (severityText.includes("perigo") || severityText.includes("ffa500")) return "media";
+  return "baixa";
+}
+
+function getIncidentAgeMinutesFromIso(iso, now = new Date()) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Math.round((now.getTime() - date.getTime()) / 60000));
+}
+
+export function normalizeInmetPayload(payload, source) {
+  const alerts = [...toArray(payload?.hoje), ...toArray(payload?.amanha)];
+
+  return alerts
+    .filter((alert) => {
+      const geocodes = normalizeText(alert.geocodes);
+      const cities = normalizeSearchText(alert.municipios);
+      return geocodes.split(",").includes(MARILIA_IBGE_CODE) || cities.includes("marilia - sp");
+    })
+    .map((alert) => {
+      const startedAt = parseTimestamp(`${normalizeText(alert.data_inicio).slice(0, 10)} ${alert.hora_inicio ?? "00:00"}`);
+      const finishedAt = parseTimestamp(`${normalizeText(alert.data_fim).slice(0, 10)} ${alert.hora_fim ?? "23:59"}`);
+      const description = stripHtml(alert.descricao || "Aviso meteorologico");
+      const risks = toArray(alert.riscos).join(" ");
+
+      return {
+        id: `${source.id}-${alert.codigo ?? alert.id}`,
+        type: "risco",
+        title: `${description} em Marilia-SP`,
+        location: "Marilia-SP",
+        neighborhood: "Marilia-SP",
+        source: source.name,
+        status: new Date(finishedAt).getTime() >= Date.now() ? "ativo" : "historico",
+        severity: normalizeInmetSeverity(alert),
+        confidence: 9,
+        occurredAt: startedAt,
+        position: MARILIA_DEFAULT_POSITION,
+        url: "https://portal.inmet.gov.br/avisosmeteorologicos",
+        detail: risks || normalizeText(alert.severidade),
+      };
+    });
+}
+
 export function getConfiguredSources(env = readViteEnv()) {
   return INCIDENT_API_SOURCES.map((source) => ({
     ...source,
-    url: normalizeText(env[source.envKey]),
+    url: normalizeText(source.url ?? env[source.envKey]),
   }));
 }
 
@@ -333,6 +545,14 @@ async function fetchJson(source, { fetchImpl, signal, timeoutMs }) {
 }
 
 function parseBySource(payload, source) {
+  if (source.parser === "rss2json") {
+    return normalizeRss2JsonPayload(payload, source);
+  }
+
+  if (source.parser === "inmet") {
+    return normalizeInmetPayload(payload, source);
+  }
+
   if (source.parser === "waze") {
     return normalizeWazePayload(payload, source);
   }

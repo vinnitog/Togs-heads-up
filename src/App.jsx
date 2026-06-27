@@ -50,7 +50,7 @@ import {
 
 const CHART_COLORS = ["#ef4444", "#2563eb", "#f59e0b", "#0f766e", "#7c3aed"];
 const DATA_DISCLOSURE =
-  "Os alertas exibidos vem somente das APIs configuradas. Sem fonte ativa, nenhum dado e inventado.";
+  "Os alertas exibidos vem de fontes publicas reais consultadas em tempo de uso. Nenhum dado e inventado.";
 const SOURCE_BADGE_LABELS = {
   conectado: "Conectada",
   pendente: "Pendente",
@@ -316,6 +316,12 @@ function IncidentDetails({ incident }) {
         <div>
           <h3>{incident.title}</h3>
           <p>{incident.location}</p>
+          {incident.detail && <p className="incident-note">{incident.detail}</p>}
+          {incident.url && (
+            <a className="source-link" href={incident.url} target="_blank" rel="noreferrer">
+              Abrir fonte
+            </a>
+          )}
         </div>
       </div>
       <div className="detail-grid">
