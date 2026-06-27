@@ -16,7 +16,6 @@ import {
   Search,
   ShieldAlert,
   Smartphone,
-  Wifi,
   WifiOff,
 } from "lucide-react";
 import {
@@ -213,10 +212,12 @@ function App() {
         </div>
 
         <div className="topbar-actions">
-          <span className={`connection-pill ${isOnline ? "online" : "offline"}`}>
-            {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
-            {isOnline ? "Online" : "Offline"}
-          </span>
+          {!isOnline && (
+            <span className="connection-pill offline">
+              <WifiOff size={16} />
+              Offline
+            </span>
+          )}
           {userLocation ? (
             <button className="location-button active" type="button" onClick={clearLocation}>
               <LocateFixed size={16} />
