@@ -81,6 +81,7 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /self\.registration\.scope/);
   assert.match(workflow, /branches:\s*\n\s*- main\s*\n\s*- develop/);
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main'/);
   assert.match(packageJson, /"packageManager": "npm@11\.6\.2"/);
   assert.match(testCmd, /npm\.cmd test/);
   assert.match(testCmd, /npm\.cmd run build/);
