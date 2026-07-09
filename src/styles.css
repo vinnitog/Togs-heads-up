@@ -650,7 +650,8 @@ input:focus-visible {
   background: #eef2f7;
 }
 
-.source-status.sem-dados {
+.source-status.sem-dados,
+.source-status.cache {
   color: #92400e;
   background: var(--amber-soft);
 }

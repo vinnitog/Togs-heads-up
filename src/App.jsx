@@ -97,6 +97,7 @@ const SOURCE_LABELS = {
   erro: "Erro",
   pendente: "Pendente",
   "sem-dados": "Sem dados",
+  cache: "Cache",
 };
 
 const INCIDENT_TYPE_LABELS = {
@@ -125,7 +126,7 @@ function App() {
   const localRequestIdRef = useRef(0);
 
   const loadDashboard = useCallback(
-    async ({ signal, showNotice = false } = {}) => {
+    async ({ signal, showNotice = false, forceRefresh = false } = {}) => {
       const requestId = requestIdRef.current + 1;
       requestIdRef.current = requestId;
       setIsLoading(true);
@@ -136,6 +137,7 @@ function App() {
           location,
           env: import.meta.env,
           signal,
+          forceRefresh,
         });
 
         if (signal?.aborted || requestId !== requestIdRef.current) return;
@@ -256,7 +258,7 @@ function App() {
   }
 
   function refreshAll() {
-    loadDashboard({ showNotice: true });
+    loadDashboard({ showNotice: true, forceRefresh: true });
     loadLocalFeed({ showNotice: true });
   }
 
@@ -778,6 +780,9 @@ function getViewState(activeView, ctx) {
   const source = dashboard.sources.find((item) => item.id === sourceKey);
   if (source?.state === "erro") {
     return { tone: "error", message: source.detail || `${source.label}: falha ao consultar` };
+  }
+  if (source?.state === "cache") {
+    return { tone: "warning", message: source.detail || `${source.label}: exibindo dados em cache` };
   }
   if (source?.state === "sem-dados") {
     return { tone: "warning", message: source.detail || `${source.label}: sem dados no recorte atual` };
