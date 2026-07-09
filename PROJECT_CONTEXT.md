@@ -4,11 +4,11 @@ Gerado em: 2026-06-26 12:33:09
 
 ## Descricao
 
-Aplicacao de uso pessoal para acompanhar clima terrestre, previsao nacional brasileira e eventos astronomicos/espaciais publicos, com Marilia-SP como local padrao.
+Aplicacao de uso pessoal para acompanhar clima terrestre, noticias locais de Marilia-SP, previsao nacional brasileira e eventos astronomicos/espaciais publicos, com Marilia-SP como local padrao.
 
 ## Objetivo
 
-Mostrar clima atual, previsao, complemento CPTEC/INPE e dados NASA/JPL sobre asteroides, meteoros e imagens espaciais, permitindo buscar dinamicamente outros locais quando a API suportar.
+Mostrar clima atual, noticias locais, previsao, complemento CPTEC/INPE e dados NASA/JPL sobre asteroides, meteoros e imagens espaciais, permitindo buscar dinamicamente outros locais quando a API suportar.
 
 ## Publico Alvo
 
@@ -73,5 +73,5 @@ git diff --check
 - Preservar alteracoes existentes do usuario.
 - Fazer staging explicito por arquivo.
 - Manter documentacao de contexto versionada neste arquivo.
-- Escopo atual do app: "Clima da Terra + Monitor Espacial".
+- Escopo atual do app: "Clima da Terra + Noticias Locais + Monitor Espacial".
 
