@@ -651,7 +651,8 @@ input:focus-visible {
 }
 
 .source-status.sem-dados,
-.source-status.cache {
+.source-status.cache,
+.source-status.indisponivel {
   color: #92400e;
   background: var(--amber-soft);
 }

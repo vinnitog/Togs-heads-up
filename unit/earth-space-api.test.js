@@ -425,8 +425,34 @@ test("a per-request timeout does not discard the whole dashboard", async () => {
 
   // O painel resolve (nao rejeita) e mantem as fontes que funcionaram.
   assert.equal(result.weather.current.temperature, 26);
-  assert.equal(result.sources.find((source) => source.id === "fireballs").state, "erro");
+  // fireballs depende de proxy -> degrada suave para "indisponivel".
+  assert.equal(result.sources.find((source) => source.id === "fireballs").state, "indisponivel");
   assert.deepEqual(result.fireballs, []);
+});
+
+test("a proxy-dependent source degrades to 'indisponivel', not a hard error", async () => {
+  const result = await fetchEarthSpaceDashboard({
+    fetchImpl: async (url) => {
+      // JPL falha mesmo via proxy (proxy publico nao responde): TypeError.
+      if (url.includes("ssd-api.jpl.nasa.gov")) throw new TypeError("Failed to fetch");
+      if (url.includes("api.open-meteo.com")) {
+        return { ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 26 }, daily: { time: [] }, hourly: { time: [] } }) };
+      }
+      if (url.includes("servicos.cptec.inpe.br") || url.includes("allorigins")) {
+        return { ok: true, text: async () => "<cidade><nome>Marilia</nome><uf>SP</uf></cidade>" };
+      }
+      if (url.includes("planetary/apod")) return { ok: true, json: async () => ({ title: "APOD", media_type: "image", url: "https://example.test/apod.jpg" }) };
+      if (url.includes("neo/rest")) return { ok: true, json: async () => ({ element_count: 0, near_earth_objects: {} }) };
+      if (url.includes("mars-photos")) return { ok: true, json: async () => ({ latest_photos: [] }) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    },
+  });
+
+  const cad = result.sources.find((source) => source.id === "cad");
+  assert.equal(cad.state, "indisponivel");
+  assert.deepEqual(result.cad, []);
+  // Nao polui os warnings (degradacao suave, nao alarme).
+  assert.ok(!result.warnings.some((warning) => warning.includes("Close-Approach")));
 });
 
 test("fetchEarthSpaceDashboard keeps useful data when one space source fails", async () => {

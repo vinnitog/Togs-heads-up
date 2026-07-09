@@ -744,6 +744,7 @@ export async function fetchEarthSpaceDashboard({
       key: "cptec",
       label: "CPTEC/INPE",
       scope: locationScope,
+      proxyDependent: true,
       run: async () => fetchCptecForecastForLocation(location, options),
     },
     {
@@ -759,11 +760,13 @@ export async function fetchEarthSpaceDashboard({
     {
       key: "cad",
       label: "NASA/JPL Close-Approach",
+      proxyDependent: true,
       run: async () => normalizeJplCadPayload(await fetchJson(buildJplCloseApproachUrl(), options)),
     },
     {
       key: "fireballs",
       label: "NASA/JPL Fireball",
+      proxyDependent: true,
       run: async () => normalizeFireballPayload(await fetchJson(buildFireballUrl(), options)),
     },
     {
@@ -834,6 +837,19 @@ async function runDashboardTask(task, { storage, forceRefresh, signal }) {
         state: "cache",
         detail: `Sem atualizar (${message}); exibindo ultimo dado salvo`,
         warning: `${task.label}: ${message} (usando cache)`,
+      };
+    }
+
+    // Fontes que dependem de proxy (CPTEC/JPL) degradam de forma suave: nao sao
+    // um erro do app, e sim uma limitacao do navegador (sem CORS) ou do proxy.
+    if (task.proxyDependent) {
+      return {
+        key: task.key,
+        label: task.label,
+        value: emptyValueForTask(task.key),
+        state: "indisponivel",
+        detail: "Indisponivel no navegador (fonte sem CORS); requer proxy ativo",
+        warning: null,
       };
     }
 
