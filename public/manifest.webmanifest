@@ -1,7 +1,7 @@
 {
   "name": "Togs Heads Up",
   "short_name": "Heads Up",
-  "description": "Clima, previsao nacional e monitor espacial com Marilia-SP como local padrao.",
+  "description": "Clima, noticias locais, previsao nacional e monitor espacial com Marilia-SP como local padrao.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

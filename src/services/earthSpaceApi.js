@@ -15,7 +15,6 @@ export const DEFAULT_LOCATION = {
 const DEFAULT_TIMEOUT_MS = 12000;
 const CPTEC_BASE_URL = "https://servicos.cptec.inpe.br/XML";
 const NASA_API_BASE_URL = "https://api.nasa.gov";
-const NASA_IMAGES_BASE_URL = "https://images-api.nasa.gov";
 const JPL_SSD_BASE_URL = "https://ssd-api.jpl.nasa.gov";
 
 const WMO_DESCRIPTIONS = {
@@ -341,16 +340,6 @@ export function buildMarsRoverPhotosUrl(apiKey = NASA_DEMO_KEY) {
   return `${NASA_API_BASE_URL}/mars-photos/api/v1/rovers/curiosity/photos?${params.toString()}`;
 }
 
-export function buildNasaImageSearchUrl(query = "earth from space") {
-  const params = new URLSearchParams({
-    q: normalizeText(query, "earth from space"),
-    media_type: "image",
-    page_size: "8",
-  });
-
-  return `${NASA_IMAGES_BASE_URL}/search?${params.toString()}`;
-}
-
 export function normalizeGeocodingResults(payload) {
   return (Array.isArray(payload?.results) ? payload.results : []).map((place) => ({
     id: String(place.id ?? `${place.latitude}-${place.longitude}`),
@@ -538,26 +527,6 @@ export function normalizeMarsRoverPayload(payload) {
   }));
 }
 
-export function normalizeNasaImagePayload(payload) {
-  const items = Array.isArray(payload?.collection?.items) ? payload.collection.items : [];
-
-  return items
-    .map((item) => {
-      const data = item.data?.[0] ?? {};
-      const preview = item.links?.find((link) => link.render === "image") ?? item.links?.[0];
-
-      return {
-        nasaId: normalizeText(data.nasa_id),
-        title: normalizeText(data.title, "Imagem NASA"),
-        center: normalizeText(data.center),
-        date: normalizeText(data.date_created).slice(0, 10),
-        imageUrl: normalizeText(preview?.href).replace(/^http:\/\//i, "https://"),
-        description: normalizeText(data.description),
-      };
-    })
-    .filter((item) => item.imageUrl);
-}
-
 async function fetchCptecForecastForLocation(location, options) {
   if (location.countryCode && location.countryCode !== "BR") {
     return null;
@@ -593,7 +562,6 @@ export async function searchLocations(query, { fetchImpl = globalThis.fetch, sig
 
 export async function fetchEarthSpaceDashboard({
   location = DEFAULT_LOCATION,
-  imageQuery = "earth from space",
   env = readViteEnv(),
   fetchImpl = globalThis.fetch,
   signal,
@@ -639,11 +607,6 @@ export async function fetchEarthSpaceDashboard({
       key: "marsPhotos",
       label: "NASA Mars Rover Photos",
       run: async () => normalizeMarsRoverPayload(await fetchJson(buildMarsRoverPhotosUrl(apiKey), options)),
-    },
-    {
-      key: "nasaImages",
-      label: "NASA Image Library",
-      run: async () => normalizeNasaImagePayload(await fetchJson(buildNasaImageSearchUrl(imageQuery), options)),
     },
   ];
 

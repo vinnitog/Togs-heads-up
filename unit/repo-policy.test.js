@@ -73,7 +73,7 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(index, /%BASE_URL%icon\.svg/);
   assert.match(manifest, /"start_url": "\.\/"/);
   assert.match(manifest, /"scope": "\.\/"/);
-  assert.match(serviceWorker, /togs-heads-up-v6/);
+  assert.match(serviceWorker, /togs-heads-up-v7/);
   assert.match(serviceWorker, /application\/json/);
   assert.match(serviceWorker, /application\/xml/);
   assert.match(serviceWorker, /text\/xml/);
@@ -102,6 +102,7 @@ test("app is consult only and uses public weather and astronomy APIs", () => {
   assert.doesNotMatch(app, new RegExp("local" + "Storage"));
   assert.doesNotMatch(app, /Dados demo|demonstrativos|SEED_INCIDENTS/);
   assert.match(app, /fetchEarthSpaceDashboard/);
+  assert.match(app, /fetchIncidents/);
   assert.match(app, /searchLocations/);
   assert.match(api, /api\.open-meteo\.com/);
   assert.match(api, /geocoding-api\.open-meteo\.com/);
@@ -111,6 +112,7 @@ test("app is consult only and uses public weather and astronomy APIs", () => {
   assert.match(api, /cad\.api/);
   assert.match(api, /fireball\.api/);
   assert.match(api, /mars-photos/);
-  assert.match(api, /images-api\.nasa\.gov/);
+  assert.doesNotMatch(api, /images-api\.nasa\.gov/);
+  assert.doesNotMatch(app, /NASA Image Library|NasaLibraryPanel|nasaImages/);
   assert.match(env, /VITE_NASA_API_KEY/);
 });

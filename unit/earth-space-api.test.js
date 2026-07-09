@@ -8,7 +8,6 @@ import {
   buildGeocodingUrl,
   buildJplCloseApproachUrl,
   buildMarsRoverPhotosUrl,
-  buildNasaImageSearchUrl,
   buildNeoWsUrl,
   buildOpenMeteoForecastUrl,
   fetchEarthSpaceDashboard,
@@ -20,7 +19,6 @@ import {
   normalizeGeocodingResults,
   normalizeJplCadPayload,
   normalizeMarsRoverPayload,
-  normalizeNasaImagePayload,
   normalizeNeoWsPayload,
   normalizeWeatherPayload,
 } from "../src/services/earthSpaceApi.js";
@@ -177,7 +175,6 @@ test("NASA and CPTEC builders encode keys, dates and search text", () => {
   assert.match(buildFireballUrl(12), /fireball\.api\?limit=12&req-loc=true/);
   assert.match(buildMarsRoverPhotosUrl("abc123"), /mars-photos\/api\/v1\/rovers\/curiosity\/photos/);
   assert.match(buildMarsRoverPhotosUrl("abc123"), /api_key=abc123/);
-  assert.match(buildNasaImageSearchUrl("mars weather"), /q=mars\+weather/);
   assert.equal(getNasaApiKey({}), "DEMO_KEY");
   assert.equal(getNasaApiKey({ VITE_NASA_API_KEY: "real-key" }), "real-key");
 });
@@ -222,22 +219,6 @@ test("fireball payload converts coordinates by hemisphere", () => {
   assert.equal(fireball.altitudeKm, 31.2);
 });
 
-test("NASA image library payload keeps preview image metadata", () => {
-  const [image] = normalizeNasaImagePayload({
-    collection: {
-      items: [
-        {
-          data: [{ nasa_id: "img-1", title: "Earth", center: "GSFC", date_created: "2026-07-09T00:00:00Z" }],
-          links: [{ href: "http://images-assets.nasa.gov/image/img-1/thumb.jpg", render: "image" }],
-        },
-      ],
-    },
-  });
-
-  assert.equal(image.nasaId, "img-1");
-  assert.match(image.imageUrl, /^https:\/\//);
-});
-
 test("fetchEarthSpaceDashboard aggregates sources without live network", async () => {
   const requestedUrls = [];
   const result = await fetchEarthSpaceDashboard({
@@ -280,10 +261,6 @@ test("fetchEarthSpaceDashboard aggregates sources without live network", async (
         return { ok: true, json: async () => ({ photos: [] }) };
       }
 
-      if (url.includes("images-api.nasa.gov")) {
-        return { ok: true, json: async () => ({ collection: { items: [] } }) };
-      }
-
       return { ok: false, status: 404, json: async () => ({}) };
     },
   });
@@ -321,10 +298,6 @@ test("fetchEarthSpaceDashboard keeps useful data when one space source fails", a
 
       if (url.includes("mars-photos")) {
         return { ok: true, json: async () => ({ photos: [] }) };
-      }
-
-      if (url.includes("images-api.nasa.gov")) {
-        return { ok: true, json: async () => ({ collection: { items: [] } }) };
       }
 
       return { ok: false, status: 404, json: async () => ({}) };
