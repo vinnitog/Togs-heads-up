@@ -264,9 +264,9 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <div className="topbar-copy">
-          <p className="eyebrow">Marilia-SP por padrao</p>
-          <h1>Monitor Terra + Espaco</h1>
-          <p>Clima, noticias locais e eventos espaciais separados por fonte para leitura objetiva.</p>
+          <p className="eyebrow">Painel pessoal</p>
+          <h1>Togs Heads-UP</h1>
+          <p>Clima, noticias de Marilia-SP e eventos espaciais reunidos em um so lugar, cada fonte com seu proprio espaco.</p>
         </div>
 
         <div className="topbar-actions">
@@ -312,13 +312,6 @@ function App() {
         )}
       </header>
 
-      {(isLoading || isLocalLoading || loadError || localError || dashboard.warnings.length > 0 || localFeed.warnings.length > 0) && (
-        <section className={`feed-state ${loadError || localError || dashboard.warnings.length > 0 || localFeed.warnings.length > 0 ? "warning" : ""}`} aria-live="polite">
-          <RefreshCw size={18} className={isLoading || isLocalLoading ? "spin" : ""} />
-          <span>{getStatusMessage({ isLoading, isLocalLoading, loadError, localError, dashboard, localFeed })}</span>
-        </section>
-      )}
-
       <main className="workspace">
         <aside className="api-menu" aria-label="Menu de fontes">
           {VIEW_GROUPS.map((group) => (
@@ -343,7 +336,8 @@ function App() {
         </aside>
 
         <section className="screen-shell">
-          <ScreenHeading view={currentView} dashboard={dashboard} localFeed={localFeed} />
+          <ScreenHeading view={currentView} activeView={activeView} dashboard={dashboard} localFeed={localFeed} />
+          <ScreenAlert state={getViewState(activeView, { dashboard, localFeed, loadError, localError, isLoading, isLocalLoading })} />
           {activeView === "overview" && <OverviewScreen dashboard={dashboard} localFeed={localFeed} />}
           {activeView === "weather" && <WeatherScreen weather={dashboard.weather} location={location} />}
           {activeView === "cptec" && <CptecScreen cptec={dashboard.cptec} location={location} />}
@@ -362,7 +356,9 @@ function App() {
   );
 }
 
-function ScreenHeading({ view, dashboard, localFeed }) {
+function ScreenHeading({ view, activeView, dashboard, localFeed }) {
+  const updatedAt = getViewUpdatedAt(activeView, dashboard, localFeed);
+
   return (
     <header className="screen-heading">
       <div>
@@ -371,12 +367,20 @@ function ScreenHeading({ view, dashboard, localFeed }) {
       </div>
       <div className="screen-meta">
         <Globe2 size={16} />
-        <span>
-          Clima {dashboard.fetchedAt ? formatTime(dashboard.fetchedAt) : "pendente"} | Locais{" "}
-          {localFeed.fetchedAt ? formatTime(localFeed.fetchedAt) : "pendente"}
-        </span>
+        <span>Atualizado {updatedAt ? formatTime(updatedAt) : "pendente"}</span>
       </div>
     </header>
+  );
+}
+
+function ScreenAlert({ state }) {
+  if (!state) return null;
+
+  return (
+    <div className={`screen-alert ${state.tone}`} role={state.tone === "error" ? "alert" : "status"} aria-live="polite">
+      <RefreshCw size={16} className={state.tone === "loading" ? "spin" : ""} />
+      <span>{state.message}</span>
+    </div>
   );
 }
 
@@ -525,7 +529,7 @@ function LocalNewsScreen({ localFeed, isLoading }) {
           {incidents.map((incident) => (
             <article className="news-row" key={incident.id}>
               <span className={`severity-dot ${incident.severity}`} />
-              <div>
+              <div className="news-body">
                 <strong>{incident.title}</strong>
                 <small>
                   {incident.source} | {INCIDENT_TYPE_LABELS[incident.type] ?? "Local"} | {incident.neighborhood} |{" "}
@@ -743,13 +747,50 @@ function getScreenTitle(id) {
   return titles[id] ?? "Painel";
 }
 
-function getStatusMessage({ isLoading, isLocalLoading, loadError, localError, dashboard, localFeed }) {
-  if (isLoading || isLocalLoading) return "Consultando fontes publicas...";
-  if (loadError) return loadError;
-  if (localError) return localError;
-  if (dashboard.warnings.length > 0) return dashboard.warnings.slice(0, 2).join(" | ");
-  if (localFeed.warnings.length > 0) return localFeed.warnings.slice(0, 2).join(" | ");
-  return "";
+const DASHBOARD_VIEW_SOURCE = {
+  weather: "weather",
+  cptec: "cptec",
+  apod: "apod",
+  neows: "neows",
+  cad: "cad",
+  fireballs: "fireballs",
+  mars: "marsPhotos",
+};
+
+function getViewState(activeView, ctx) {
+  const { dashboard, localFeed, loadError, localError, isLoading, isLocalLoading } = ctx;
+
+  if (activeView === "local") {
+    if (isLocalLoading) return { tone: "loading", message: "Atualizando noticias locais..." };
+    if (localError) return { tone: "error", message: localError };
+    if (localFeed.warnings.length > 0) return { tone: "warning", message: localFeed.warnings.slice(0, 2).join(" | ") };
+    return null;
+  }
+
+  if (activeView === "overview" || activeView === "sources") return null;
+
+  const sourceKey = DASHBOARD_VIEW_SOURCE[activeView];
+  if (!sourceKey) return null;
+
+  if (isLoading) return { tone: "loading", message: "Consultando fonte..." };
+  if (loadError) return { tone: "error", message: loadError };
+
+  const source = dashboard.sources.find((item) => item.id === sourceKey);
+  if (source?.state === "erro") {
+    return { tone: "error", message: source.detail || `${source.label}: falha ao consultar` };
+  }
+  if (source?.state === "sem-dados") {
+    return { tone: "warning", message: source.detail || `${source.label}: sem dados no recorte atual` };
+  }
+  return null;
+}
+
+function getViewUpdatedAt(activeView, dashboard, localFeed) {
+  if (activeView === "local") return localFeed.fetchedAt;
+  if (activeView === "overview" || activeView === "sources") {
+    return [dashboard.fetchedAt, localFeed.fetchedAt].filter(Boolean).sort().slice(-1)[0] ?? null;
+  }
+  return dashboard.fetchedAt;
 }
 
 function formatValue(value, suffix = "") {

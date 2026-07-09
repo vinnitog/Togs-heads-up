@@ -226,25 +226,39 @@ input:focus-visible {
   background: rgba(220, 38, 38, 0.24);
 }
 
-.feed-state {
+.screen-alert {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 14px 0 0;
-  padding: 12px 14px;
-  color: #374151;
-  background: var(--surface);
+  margin: 16px 0 0;
+  padding: 11px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-weight: 800;
-  box-shadow: var(--shadow);
+  line-height: 1.4;
 }
 
-.feed-state.warning {
+.screen-alert svg {
+  flex: 0 0 auto;
+}
+
+.screen-alert.loading {
+  color: #475467;
+  background: var(--surface-muted);
+  border-color: var(--border);
+}
+
+.screen-alert.warning {
   color: #92400e;
   background: var(--amber-soft);
   border-color: #fde68a;
+}
+
+.screen-alert.error {
+  color: #991b1b;
+  background: var(--rose-soft);
+  border-color: #fecaca;
 }
 
 .workspace {
@@ -423,7 +437,6 @@ input:focus-visible {
 .summary-line strong,
 .info-row strong,
 .data-row strong,
-.news-row strong,
 .source-row strong {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -528,8 +541,29 @@ input:focus-visible {
   align-items: start;
 }
 
+.news-body {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.news-body strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.35;
+}
+
+.news-body small {
+  overflow-wrap: anywhere;
+}
+
 .news-row p {
   margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.news-row a {
+  flex: 0 0 auto;
 }
 
 .news-row a {
@@ -705,6 +739,10 @@ input:focus-visible {
     padding: 14px;
   }
 
+  .screen-shell {
+    min-height: 420px;
+  }
+
   .topbar h1 {
     font-size: 1.65rem;
   }
@@ -734,8 +772,7 @@ input:focus-visible {
   }
 
   .summary-line,
-  .data-row,
-  .news-row {
+  .data-row {
     grid-template-columns: auto minmax(0, 1fr);
   }
 
@@ -749,12 +786,26 @@ input:focus-visible {
     align-items: start;
   }
 
+  /* Mantem: bolinha, texto e link na mesma linha, texto quebrando */
+  .news-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
   .photo-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 460px) {
+  .app-shell {
+    padding: 10px 8px 24px;
+  }
+
+  .topbar h1 {
+    font-size: 1.45rem;
+  }
+
   .location-search {
     grid-template-columns: auto minmax(0, 1fr);
     padding-bottom: 8px;
@@ -767,6 +818,23 @@ input:focus-visible {
 
   .api-menu button {
     min-height: 46px;
+  }
+
+  .menu-group {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .weather-current strong {
+    font-size: 2.4rem;
+  }
+
+  .weather-symbol {
+    width: 56px;
+    height: 56px;
+  }
+
+  .screen-shell {
+    min-height: auto;
   }
 }
 
