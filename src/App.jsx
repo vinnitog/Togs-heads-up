@@ -98,6 +98,7 @@ const SOURCE_LABELS = {
   pendente: "Pendente",
   "sem-dados": "Sem dados",
   cache: "Cache",
+  indisponivel: "Indisponivel",
 };
 
 const INCIDENT_TYPE_LABELS = {
@@ -783,6 +784,9 @@ function getViewState(activeView, ctx) {
   }
   if (source?.state === "cache") {
     return { tone: "warning", message: source.detail || `${source.label}: exibindo dados em cache` };
+  }
+  if (source?.state === "indisponivel") {
+    return { tone: "warning", message: source.detail || `${source.label}: indisponivel no navegador` };
   }
   if (source?.state === "sem-dados") {
     return { tone: "warning", message: source.detail || `${source.label}: sem dados no recorte atual` };

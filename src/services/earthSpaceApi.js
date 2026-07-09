@@ -13,6 +13,9 @@ export const DEFAULT_LOCATION = {
 };
 
 const DEFAULT_TIMEOUT_MS = 12000;
+// Requisicoes via proxy de CORS falham mais rapido: um proxy publico lento
+// nao deve segurar o painel inteiro por 12s antes de cair para erro/cache.
+const PROXY_TIMEOUT_MS = 8000;
 const CPTEC_BASE_URL = "https://servicos.cptec.inpe.br/XML";
 const NASA_API_BASE_URL = "https://api.nasa.gov";
 const JPL_SSD_BASE_URL = "https://ssd-api.jpl.nasa.gov";
@@ -319,11 +322,16 @@ function isNetworkError(error) {
 
 async function request(url, options) {
   const proxied = options.viaProxy ? null : buildProxiedUrl(url, options.corsProxy);
+  const proxyOptions = {
+    ...options,
+    viaProxy: true,
+    timeoutMs: Math.min(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, PROXY_TIMEOUT_MS),
+  };
 
   // Fontes sem CORS (CPTEC/JPL): so pelo proxy. Tentar direto sempre falha por
   // CORS, poluindo o console e disparando retry a toa, entao nem tentamos.
   if (needsProxy(url) && proxied && proxied !== url) {
-    return rawRequest(proxied, { ...options, viaProxy: true });
+    return rawRequest(proxied, proxyOptions);
   }
 
   // Demais fontes: direto, com fallback para o proxy so em erro de rede/CORS.
@@ -331,7 +339,7 @@ async function request(url, options) {
     return await rawRequest(url, options);
   } catch (error) {
     if (isNetworkError(error) && proxied && proxied !== url) {
-      return rawRequest(proxied, { ...options, viaProxy: true });
+      return rawRequest(proxied, proxyOptions);
     }
     throw error;
   }
@@ -484,8 +492,10 @@ export function buildFireballUrl(limit = 8) {
 }
 
 export function buildMarsRoverPhotosUrl(apiKey = NASA_DEMO_KEY) {
-  const params = new URLSearchParams({ sol: "1000", camera: "fhaz", page: "1", api_key: apiKey });
-  return `${NASA_API_BASE_URL}/mars-photos/api/v1/rovers/curiosity/photos?${params.toString()}`;
+  // latest_photos e mais confiavel que photos?sol=...&camera=...: retorna as
+  // fotos mais recentes disponiveis, sem 404 quando o sol/camera nao tem imagem.
+  const params = new URLSearchParams({ api_key: apiKey });
+  return `${NASA_API_BASE_URL}/mars-photos/api/v1/rovers/curiosity/latest_photos?${params.toString()}`;
 }
 
 export function normalizeGeocodingResults(payload) {
@@ -734,6 +744,7 @@ export async function fetchEarthSpaceDashboard({
       key: "cptec",
       label: "CPTEC/INPE",
       scope: locationScope,
+      proxyDependent: true,
       run: async () => fetchCptecForecastForLocation(location, options),
     },
     {
@@ -749,11 +760,13 @@ export async function fetchEarthSpaceDashboard({
     {
       key: "cad",
       label: "NASA/JPL Close-Approach",
+      proxyDependent: true,
       run: async () => normalizeJplCadPayload(await fetchJson(buildJplCloseApproachUrl(), options)),
     },
     {
       key: "fireballs",
       label: "NASA/JPL Fireball",
+      proxyDependent: true,
       run: async () => normalizeFireballPayload(await fetchJson(buildFireballUrl(), options)),
     },
     {
@@ -824,6 +837,19 @@ async function runDashboardTask(task, { storage, forceRefresh, signal }) {
         state: "cache",
         detail: `Sem atualizar (${message}); exibindo ultimo dado salvo`,
         warning: `${task.label}: ${message} (usando cache)`,
+      };
+    }
+
+    // Fontes que dependem de proxy (CPTEC/JPL) degradam de forma suave: nao sao
+    // um erro do app, e sim uma limitacao do navegador (sem CORS) ou do proxy.
+    if (task.proxyDependent) {
+      return {
+        key: task.key,
+        label: task.label,
+        value: emptyValueForTask(task.key),
+        state: "indisponivel",
+        detail: "Indisponivel no navegador (fonte sem CORS); requer proxy ativo",
+        warning: null,
       };
     }
 
