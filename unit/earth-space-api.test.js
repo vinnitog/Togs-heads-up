@@ -173,7 +173,7 @@ test("NASA and CPTEC builders encode keys, dates and search text", () => {
   assert.match(neowsUrl, /api_key=abc123/);
   assert.match(buildCptecForecastUrl("244"), /cidade\/244\/previsao\.xml/);
   assert.match(buildFireballUrl(12), /fireball\.api\?limit=12&req-loc=true/);
-  assert.match(buildMarsRoverPhotosUrl("abc123"), /mars-photos\/api\/v1\/rovers\/curiosity\/photos/);
+  assert.match(buildMarsRoverPhotosUrl("abc123"), /mars-photos\/api\/v1\/rovers\/curiosity\/latest_photos/);
   assert.match(buildMarsRoverPhotosUrl("abc123"), /api_key=abc123/);
   assert.equal(getNasaApiKey({}), "DEMO_KEY");
   assert.equal(getNasaApiKey({ VITE_NASA_API_KEY: "real-key" }), "real-key");
