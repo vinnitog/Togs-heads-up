@@ -66,18 +66,24 @@ test("github pages deployment builds vite output for repository subpath", () => 
   const serviceWorker = read("public/sw.js");
   const workflow = read(".github/workflows/deploy-pages.yml");
   const packageJson = read("package.json");
+  const testCmd = read("test.cmd");
 
   assert.match(viteConfig, /\/Togs-heads-up\//);
   assert.match(index, /%BASE_URL%manifest\.webmanifest/);
   assert.match(index, /%BASE_URL%icon\.svg/);
   assert.match(manifest, /"start_url": "\.\/"/);
   assert.match(manifest, /"scope": "\.\/"/);
-  assert.match(serviceWorker, /togs-heads-up-v5/);
+  assert.match(serviceWorker, /togs-heads-up-v6/);
   assert.match(serviceWorker, /application\/json/);
+  assert.match(serviceWorker, /application\/xml/);
+  assert.match(serviceWorker, /text\/xml/);
+  assert.match(serviceWorker, /requestUrl\.origin !== self\.location\.origin/);
   assert.match(serviceWorker, /\/api\//);
   assert.match(serviceWorker, /self\.registration\.scope/);
   assert.match(workflow, /branches:\s*\n\s*- main\s*\n\s*- develop/);
   assert.match(packageJson, /"packageManager": "npm@11\.6\.2"/);
+  assert.match(testCmd, /npm\.cmd test/);
+  assert.match(testCmd, /npm\.cmd run build/);
   assert.match(workflow, /node-version: 24/);
   assert.match(workflow, /npm install -g npm@11\.6\.2/);
   assert.match(workflow, /npm ci/);
@@ -86,19 +92,24 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(workflow, /actions\/deploy-pages/);
 });
 
-test("app is consult only and uses API data without fake incidents", () => {
+test("app is consult only and uses public weather and astronomy APIs", () => {
   const app = read("src/App.jsx");
-  const data = read("src/data/incidents.js");
-  const api = read("src/services/incidentsApi.js");
+  const api = read("src/services/earthSpaceApi.js");
+  const env = read(".env.example");
 
   assert.doesNotMatch(app, new RegExp("Relat" + "ar|Registrar " + "alerta|ReportPanel|PlusCircle|Trash2"));
   assert.doesNotMatch(app, new RegExp("local" + "Storage"));
   assert.doesNotMatch(app, /Dados demo|demonstrativos|SEED_INCIDENTS/);
-  assert.doesNotMatch(data, /SEED_INCIDENTS|Dado demonstrativo/);
-  assert.match(app, /fetchIncidents/);
-  assert.match(data, /VITE_INCIDENTS_API_URL/);
-  assert.match(data, /api\.rss2json\.com/);
-  assert.match(data, /apiprevmet3\.inmet\.gov\.br/);
-  assert.match(api, /normalizeRss2JsonPayload/);
-  assert.match(api, /normalizeInmetPayload/);
+  assert.match(app, /fetchEarthSpaceDashboard/);
+  assert.match(app, /searchLocations/);
+  assert.match(api, /api\.open-meteo\.com/);
+  assert.match(api, /geocoding-api\.open-meteo\.com/);
+  assert.match(api, /servicos\.cptec\.inpe\.br/);
+  assert.match(api, /planetary\/apod/);
+  assert.match(api, /neo\/rest\/v1\/feed/);
+  assert.match(api, /cad\.api/);
+  assert.match(api, /fireball\.api/);
+  assert.match(api, /mars-photos/);
+  assert.match(api, /images-api\.nasa\.gov/);
+  assert.match(env, /VITE_NASA_API_KEY/);
 });

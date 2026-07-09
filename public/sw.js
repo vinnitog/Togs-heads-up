@@ -1,4 +1,4 @@
-const CACHE_NAME = "togs-heads-up-v5";
+const CACHE_NAME = "togs-heads-up-v6";
 const toScopeUrl = (path) => new URL(path, self.registration.scope).toString();
 const INDEX_URL = toScopeUrl("index.html");
 const APP_SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg"].map(toScopeUrl);
@@ -24,19 +24,25 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const requestUrl = new URL(request.url);
-  const acceptsJson = request.headers.get("accept")?.includes("application/json");
+  const accept = request.headers.get("accept") || "";
+  const isExternalRequest = requestUrl.origin !== self.location.origin;
+  const acceptsDynamicData =
+    accept.includes("application/json") ||
+    accept.includes("application/xml") ||
+    accept.includes("text/xml") ||
+    accept.includes("text/plain");
 
   if (request.method !== "GET") {
     return;
   }
 
-  if (acceptsJson || requestUrl.pathname.includes("/api/")) {
-    event.respondWith(fetch(request));
+  if (request.mode === "navigate") {
+    event.respondWith(fetch(request).catch(() => caches.match(INDEX_URL)));
     return;
   }
 
-  if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match(INDEX_URL)));
+  if (isExternalRequest || acceptsDynamicData || requestUrl.pathname.includes("/api/")) {
+    event.respondWith(fetch(request));
     return;
   }
 
