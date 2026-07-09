@@ -1,7 +1,7 @@
 {
   "name": "Togs Heads Up",
   "short_name": "Heads Up",
-  "description": "Alertas preventivos de acidentes, ocorrencias e riscos em Marilia-SP.",
+  "description": "Clima, previsao nacional e monitor espacial com Marilia-SP como local padrao.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

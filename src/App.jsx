@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
-  BarChart3,
-  BellRing,
-  Car,
-  Clock,
+  Aperture,
+  CalendarDays,
+  CloudRain,
+  CloudSun,
   Database,
+  Droplets,
+  ExternalLink,
+  Flame,
   Gauge,
+  Globe2,
+  Image as ImageIcon,
   LocateFixed,
   MapPin,
-  Navigation,
-  Radio,
+  MoonStar,
   RefreshCw,
-  Route,
+  Rocket,
+  Satellite,
   Search,
-  ShieldAlert,
-  Smartphone,
+  Sun,
+  Telescope,
+  Thermometer,
   WifiOff,
+  Wind,
+  Zap,
 } from "lucide-react";
 import {
   Area,
@@ -24,95 +33,88 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import {
-  coordinatesToMapPosition,
-  distanceFromUserKm,
-  fetchIncidents,
-  getSourceStatuses,
-} from "./services/incidentsApi.js";
-import {
-  STATUS_LABELS,
-  SEVERITY_LABELS,
-  TYPE_LABELS,
-  calculateRiskScore,
-  createIncidentSummary,
-  filterIncidents,
-  formatAge,
-  formatDistance,
-  getHotspots,
-  getIncidentAgeMinutes,
-  getRiskBand,
-  getTimeWindowData,
-  getTypeChartData,
-  sortIncidentsByRisk,
-} from "./utils/incidents.js";
+  DEFAULT_LOCATION,
+  buildLocationLabel,
+  fetchEarthSpaceDashboard,
+  searchLocations,
+} from "./services/earthSpaceApi.js";
 
-const CHART_COLORS = ["#ef4444", "#2563eb", "#f59e0b", "#0f766e", "#7c3aed"];
-const SOURCE_BADGE_LABELS = {
-  conectado: "Conectada",
-  pendente: "Pendente",
+const EMPTY_DASHBOARD = {
+  weather: null,
+  cptec: null,
+  apod: null,
+  neows: null,
+  cad: [],
+  fireballs: [],
+  marsPhotos: [],
+  nasaImages: [],
+  sources: [],
+  warnings: [],
+  fetchedAt: null,
+};
+
+const SOURCE_LABELS = {
+  online: "Online",
   erro: "Erro",
   "sem-dados": "Sem dados",
 };
 
-const INCIDENT_ICONS = {
-  acidente: Car,
-  policial: ShieldAlert,
-  risco: AlertTriangle,
-  rodovia: Route,
-  historico: Database,
-};
-
 function App() {
-  const [filters, setFilters] = useState({ type: "todos", status: "todos", severity: "todas", query: "" });
-  const [incidents, setIncidents] = useState([]);
-  const [selectedId, setSelectedId] = useState("");
-  const [sources, setSources] = useState(() => getSourceStatuses());
-  const [lastSync, setLastSync] = useState(null);
-  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [location, setLocation] = useState(DEFAULT_LOCATION);
+  const [locationQuery, setLocationQuery] = useState("Marilia-SP");
+  const [locationResults, setLocationResults] = useState([]);
+  const [imageDraft, setImageDraft] = useState("earth from space");
+  const [imageQuery, setImageQuery] = useState("earth from space");
+  const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [notice, setNotice] = useState("");
-  const [userLocation, setUserLocation] = useState(null);
-  const [geoStatus, setGeoStatus] = useState("idle");
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  const requestIdRef = useRef(0);
 
-  const loadIncidentFeed = useCallback(async ({ signal, showNotice = false } = {}) => {
-    setIsLoading(true);
-    setLoadError("");
+  const loadDashboard = useCallback(
+    async ({ signal, showNotice = false } = {}) => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
+      setIsLoading(true);
+      setLoadError("");
 
-    try {
-      const result = await fetchIncidents({ signal });
-      const nextIncidents = sortIncidentsByRisk(result.incidents);
+      try {
+        const result = await fetchEarthSpaceDashboard({
+          location,
+          imageQuery,
+          env: import.meta.env,
+          signal,
+        });
 
-      setIncidents(nextIncidents);
-      setSources(result.sources);
-      setLastSync(new Date(result.fetchedAt));
-      setSelectedId((currentId) => {
-        if (nextIncidents.some((incident) => incident.id === currentId)) return currentId;
-        return nextIncidents[0]?.id ?? "";
-      });
+        if (signal?.aborted || requestId !== requestIdRef.current) return;
 
-      if (result.warnings.length > 0) {
-        setLoadError(result.warnings.join(" "));
+        setDashboard(result);
+        if (showNotice) setNotice("Dados atualizados");
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        if (requestId !== requestIdRef.current) return;
+        setLoadError(error?.message || "Nao foi possivel consultar as APIs.");
+        if (showNotice) setNotice("Falha ao atualizar");
+      } finally {
+        if (!signal?.aborted && requestId === requestIdRef.current) setIsLoading(false);
       }
+    },
+    [imageQuery, location],
+  );
 
-      if (showNotice) {
-        setNotice(`${nextIncidents.length} alerta(s) real(is) carregado(s)`);
-      }
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-      setLoadError(error?.message || "Nao foi possivel consultar as APIs.");
-      if (showNotice) setNotice("Falha ao atualizar as APIs");
-    } finally {
-      if (!signal?.aborted) setIsLoading(false);
-    }
-  }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    loadDashboard({ signal: controller.signal });
+    return () => controller.abort();
+  }, [loadDashboard]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -128,87 +130,75 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    loadIncidentFeed({ signal: controller.signal });
-    return () => controller.abort();
-  }, [loadIncidentFeed]);
-
-  useEffect(() => {
     if (!notice) return undefined;
     const timeoutId = window.setTimeout(() => setNotice(""), 2600);
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
 
-  const locatedIncidents = useMemo(() => {
-    if (!userLocation) return incidents;
-    return incidents.map((incident) => ({
-      ...incident,
-      distanceKm: distanceFromUserKm(incident, userLocation),
-    }));
-  }, [incidents, userLocation]);
+  const metrics = useMemo(() => createMetrics(dashboard), [dashboard]);
 
-  const filteredIncidents = useMemo(() => {
-    const result = filterIncidents(locatedIncidents, filters);
-    if (!userLocation) return result;
-    return [...result].sort(
-      (a, b) => (a.distanceKm ?? Number.POSITIVE_INFINITY) - (b.distanceKm ?? Number.POSITIVE_INFINITY),
-    );
-  }, [locatedIncidents, filters, userLocation]);
+  async function handleLocationSubmit(event) {
+    event.preventDefault();
+    const query = locationQuery.trim();
+    if (!query) return;
 
-  const selectedIncident =
-    locatedIncidents.find((incident) => incident.id === selectedId) ?? locatedIncidents[0];
-  const summary = useMemo(() => createIncidentSummary(incidents), [incidents]);
-  const typeChartData = useMemo(() => getTypeChartData(incidents), [incidents]);
-  const timeWindowData = useMemo(() => getTimeWindowData(incidents), [incidents]);
-  const hotspots = useMemo(() => getHotspots(incidents), [incidents]);
-  const userMapPosition = useMemo(
-    () => (userLocation ? coordinatesToMapPosition(userLocation) : null),
-    [userLocation],
-  );
+    setIsSearching(true);
+    setLoadError("");
 
-  function updateFilter(key, value) {
-    setFilters((current) => ({ ...current, [key]: value }));
-  }
+    try {
+      const results = await searchLocations(query);
+      if (results.length === 0) {
+        setLocationResults([]);
+        setNotice("Nenhum local encontrado");
+        return;
+      }
 
-  function refreshFeed() {
-    loadIncidentFeed({ showNotice: true });
-  }
-
-  function shareLocation() {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setGeoStatus("unavailable");
-      setNotice("Geolocalização indisponível neste dispositivo.");
-      return;
+      setLocationResults(results);
+      if (results.length === 1) {
+        selectLocation(results[0]);
+      } else {
+        setNotice("Escolha uma das opcoes encontradas.");
+      }
+    } catch (error) {
+      setLoadError(error?.message || "Falha ao buscar local.");
+    } finally {
+      setIsSearching(false);
     }
-
-    setGeoStatus("loading");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-        setGeoStatus("granted");
-        setNotice("Localização compartilhada. Mostrando distâncias aproximadas.");
-      },
-      () => {
-        setGeoStatus("denied");
-        setNotice("Não foi possível obter sua localização.");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
-    );
   }
 
-  function clearLocation() {
-    setUserLocation(null);
-    setGeoStatus("idle");
-    setNotice("Localização removida.");
+  function selectLocation(nextLocation) {
+    setLocation(nextLocation);
+    setLocationQuery(buildLocationLabel(nextLocation));
+    setLocationResults([]);
+    setNotice(`Local: ${buildLocationLabel(nextLocation)}`);
+  }
+
+  function resetLocation() {
+    setLocation(DEFAULT_LOCATION);
+    setLocationQuery("Marilia-SP");
+    setLocationResults([]);
+    setNotice("Local: Marilia-SP");
+  }
+
+  function refreshDashboard() {
+    loadDashboard({ showNotice: true });
+  }
+
+  function handleImageSearch(event) {
+    event.preventDefault();
+    const nextQuery = imageDraft.trim();
+    if (!nextQuery) return;
+    setImageQuery(nextQuery);
+    setNotice(`NASA Library: ${nextQuery}`);
   }
 
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div>
-          <p className="eyebrow">Marília-SP</p>
-          <h1>Togs Heads Up</h1>
-          <p className="topbar-copy">Painel preventivo de consulta sobre acidentes, ocorrências e pontos de atenção.</p>
+        <div className="topbar-copy">
+          <p className="eyebrow">Marilia-SP por padrao</p>
+          <h1>Monitor Terra + Espaco</h1>
+          <p>Clima local/global, previsao nacional e sinais astronomicos publicos em uma unica leitura.</p>
         </div>
 
         <div className="topbar-actions">
@@ -218,83 +208,135 @@ function App() {
               Offline
             </span>
           )}
-          {userLocation ? (
-            <button className="location-button active" type="button" onClick={clearLocation}>
-              <LocateFixed size={16} />
-              Localização ativa
+
+          <form className="location-search" onSubmit={handleLocationSubmit}>
+            <Search size={18} />
+            <input
+              value={locationQuery}
+              onChange={(event) => setLocationQuery(event.target.value)}
+              placeholder="Buscar cidade ou local"
+              aria-label="Buscar cidade ou local"
+            />
+            <button type="submit" disabled={isSearching}>
+              {isSearching ? "Buscando" : "Buscar"}
             </button>
-          ) : (
-            <button
-              className="location-button"
-              type="button"
-              onClick={shareLocation}
-              disabled={geoStatus === "loading"}
-            >
-              <LocateFixed size={16} />
-              {geoStatus === "loading" ? "Localizando…" : "Usar minha localização"}
-            </button>
-          )}
-          <button className="icon-button" type="button" onClick={refreshFeed} aria-label="Atualizar feed">
-            <RefreshCw size={18} />
+          </form>
+
+          <button className="ghost-button" type="button" onClick={resetLocation}>
+            <LocateFixed size={16} />
+            Marilia
+          </button>
+
+          <button className="icon-button" type="button" onClick={refreshDashboard} aria-label="Atualizar painel">
+            <RefreshCw size={18} className={isLoading ? "spin" : ""} />
           </button>
         </div>
+
+        {locationResults.length > 1 && (
+          <div className="location-results" aria-label="Resultados de localizacao">
+            {locationResults.slice(0, 5).map((result) => (
+              <button type="button" key={result.id} onClick={() => selectLocation(result)}>
+                <MapPin size={14} />
+                {buildLocationLabel(result)}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <main>
-        {(isLoading || loadError) && (
-          <section className={`feed-state ${loadError ? "warning" : ""}`} aria-live="polite">
+        {(isLoading || loadError || dashboard.warnings.length > 0) && (
+          <section className={`feed-state ${loadError || dashboard.warnings.length > 0 ? "warning" : ""}`} aria-live="polite">
             <RefreshCw size={18} className={isLoading ? "spin" : ""} />
-            <span>{isLoading ? "Consultando APIs de ocorrências..." : loadError}</span>
+            <span>{getStatusMessage(isLoading, loadError, dashboard.warnings)}</span>
           </section>
         )}
 
-        <section className="metric-grid" aria-label="Resumo dos alertas">
-          <MetricCard icon={Radio} label="Alertas ativos" value={summary.active} tone="danger" />
-          <MetricCard icon={BellRing} label="Risco crítico" value={summary.critical} tone="warning" />
-          <MetricCard icon={Clock} label="Última hora" value={summary.recent} tone="info" />
-          <MetricCard icon={Gauge} label="Índice médio" value={summary.averageRisk} tone="success" />
+        <section className="metric-grid" aria-label="Resumo operacional">
+          {metrics.map((metric) => (
+            <MetricCard key={metric.label} {...metric} />
+          ))}
         </section>
 
         <section className="dashboard-grid">
-          <MapPanel
-            incidents={locatedIncidents}
-            selectedIncident={selectedIncident}
-            onSelect={setSelectedId}
-            userMapPosition={userMapPosition}
-          />
+          <WeatherPanel weather={dashboard.weather} cptec={dashboard.cptec} location={location} />
+          <ApodPanel apod={dashboard.apod} neows={dashboard.neows} />
+        </section>
 
-          <IncidentFeed
-            incidents={filteredIncidents}
-            filters={filters}
-            isLoading={isLoading}
-            hasUserLocation={Boolean(userLocation)}
-            onFilterChange={updateFilter}
-            onSelect={setSelectedId}
-            selectedId={selectedIncident?.id}
+        <section className="analysis-grid">
+          <WeatherChart weather={dashboard.weather} />
+          <DailyForecast weather={dashboard.weather} cptec={dashboard.cptec} />
+        </section>
+
+        <section className="space-grid">
+          <NearEarthPanel neows={dashboard.neows} cad={dashboard.cad} />
+          <FireballPanel fireballs={dashboard.fireballs} />
+        </section>
+
+        <section className="media-grid">
+          <MarsPanel photos={dashboard.marsPhotos} />
+          <NasaLibraryPanel
+            images={dashboard.nasaImages}
+            imageDraft={imageDraft}
+            onDraftChange={setImageDraft}
+            onSubmit={handleImageSearch}
           />
         </section>
 
-        <section className="insight-grid">
-          <AnalyticsPanel typeChartData={typeChartData} timeWindowData={timeWindowData} />
-          <div className="insight-side">
-            <HotspotsPanel hotspots={hotspots} />
-            <SourcesPanel sources={sources} />
-          </div>
-        </section>
+        <SourcesPanel sources={dashboard.sources} fetchedAt={dashboard.fetchedAt} />
       </main>
 
       {notice && <div className="toast">{notice}</div>}
-
-      <footer className="app-footer">
-        <Smartphone size={16} />
-        Última consulta{" "}
-        {lastSync ? lastSync.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "pendente"}.
-      </footer>
     </div>
   );
 }
 
-function MetricCard({ icon: Icon, label, value, tone }) {
+function createMetrics(dashboard) {
+  const current = dashboard.weather?.current;
+  const today = dashboard.weather?.daily?.[0];
+  const neows = dashboard.neows;
+  const fireballs = dashboard.fireballs ?? [];
+
+  return [
+    {
+      icon: Thermometer,
+      label: "Temperatura",
+      value: formatValue(current?.temperature, "C"),
+      detail: current?.condition || "Open-Meteo",
+      tone: "teal",
+    },
+    {
+      icon: CloudRain,
+      label: "Chuva hoje",
+      value: formatValue(today?.rainProbability, "%"),
+      detail: `${formatValue(today?.precipitation, " mm")} previstos`,
+      tone: "blue",
+    },
+    {
+      icon: Telescope,
+      label: "NEOs 7 dias",
+      value: formatInteger(neows?.count),
+      detail: `${formatInteger(neows?.hazardousCount)} potencialmente perigosos`,
+      tone: "amber",
+    },
+    {
+      icon: Flame,
+      label: "Fireballs",
+      value: formatInteger(fireballs.length),
+      detail: "Registros recentes CNEOS",
+      tone: "rose",
+    },
+  ];
+}
+
+function getStatusMessage(isLoading, loadError, warnings) {
+  if (isLoading) return "Consultando APIs publicas...";
+  if (loadError) return loadError;
+  if (warnings.length > 0) return warnings.slice(0, 2).join(" | ");
+  return "";
+}
+
+function MetricCard({ icon: Icon, label, value, detail, tone }) {
   return (
     <article className={`metric-card ${tone}`}>
       <div className="metric-icon">
@@ -303,350 +345,508 @@ function MetricCard({ icon: Icon, label, value, tone }) {
       <div>
         <span>{label}</span>
         <strong>{value}</strong>
+        <small>{detail}</small>
       </div>
     </article>
   );
 }
 
-function MapPanel({ incidents, selectedIncident, onSelect, userMapPosition }) {
+function WeatherPanel({ weather, cptec, location }) {
+  const current = weather?.current;
+
   return (
-    <section className="panel map-panel" id="mapa">
+    <section className="panel weather-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Mapa preventivo</p>
-          <h2>Marília em observação</h2>
+          <p className="eyebrow">Clima da Terra</p>
+          <h2>{buildLocationLabel(location)}</h2>
         </div>
-        <Navigation size={22} />
+        <CloudSun size={24} />
       </div>
 
-      <div className="city-map" role="group" aria-label="Mapa preventivo de Marília com marcadores de alerta">
-        <span className="map-road horizontal" />
-        <span className="map-road vertical" />
-        <span className="map-road diagonal" />
-        <span className="map-label center">Centro</span>
-        <span className="map-label north">Aquarius</span>
-        <span className="map-label south">BR-153</span>
-        {incidents.length === 0 && <div className="map-empty">Nenhum alerta real retornado pelas APIs.</div>}
-        {incidents.map((incident) => {
-          const Icon = INCIDENT_ICONS[incident.type] ?? AlertTriangle;
-          const risk = calculateRiskScore(incident);
-          const band = getRiskBand(risk);
-          const distanceLabel = Number.isFinite(incident.distanceKm)
-            ? `, a ${formatDistance(incident.distanceKm)} de você`
-            : "";
+      {current ? (
+        <>
+          <div className="weather-current">
+            <div className="weather-symbol">
+              {current.isDay ? <Sun size={42} /> : <MoonStar size={42} />}
+            </div>
+            <div>
+              <strong>{formatValue(current.temperature, "C")}</strong>
+              <span>{current.condition}</span>
+            </div>
+          </div>
 
-          return (
-            <button
-              className={`map-marker ${band} ${selectedIncident?.id === incident.id ? "selected" : ""}`}
-              style={{ left: `${incident.position.x}%`, top: `${incident.position.y}%` }}
-              type="button"
-              key={incident.id}
-              onClick={() => onSelect(incident.id)}
-              aria-label={`${incident.title}, risco ${risk}${distanceLabel}`}
-            >
-              <Icon size={16} />
-            </button>
-          );
-        })}
-        {userMapPosition && (
-          <span
-            className="map-marker user"
-            style={{ left: `${userMapPosition.x}%`, top: `${userMapPosition.y}%` }}
-            role="img"
-            aria-label="Sua localização"
-            title="Sua localização"
-          >
-            <LocateFixed size={16} />
-          </span>
-        )}
-      </div>
-
-      {userMapPosition && (
-        <p className="map-caption">Distâncias calculadas a partir da sua localização (aproximadas).</p>
-      )}
-
-      {selectedIncident ? (
-        <IncidentDetails incident={selectedIncident} />
+          <div className="detail-grid">
+            <InfoChip icon={Thermometer} label="Sensacao" value={formatValue(current.apparentTemperature, "C")} />
+            <InfoChip icon={Droplets} label="Umidade" value={formatValue(current.humidity, "%")} />
+            <InfoChip icon={Wind} label="Vento" value={formatValue(current.windSpeed, " km/h")} />
+            <InfoChip icon={Zap} label="Rajadas" value={formatValue(current.windGusts, " km/h")} />
+            <InfoChip icon={Gauge} label="Pressao" value={formatValue(current.pressure, " hPa")} />
+            <InfoChip icon={CloudRain} label="Agora" value={formatValue(current.precipitation, " mm")} />
+          </div>
+        </>
       ) : (
-        <div className="empty-state compact">Aguardando alertas reais para detalhar.</div>
+        <EmptyState text="Open-Meteo ainda nao retornou dados para este local." />
       )}
-    </section>
-  );
-}
 
-function IncidentDetails({ incident }) {
-  const risk = calculateRiskScore(incident);
-  const age = getIncidentAgeMinutes(incident);
-  const Icon = INCIDENT_ICONS[incident.type] ?? AlertTriangle;
-
-  return (
-    <article className="incident-details">
-      <div className="incident-main">
-        <span className={`incident-icon ${incident.type}`}>
-          <Icon size={18} />
-        </span>
+      <div className="cptec-strip">
         <div>
-          <h3>{incident.title}</h3>
-          <p>{incident.location}</p>
-          {incident.detail && <p className="incident-note">{incident.detail}</p>}
-          {incident.url && (
-            <a className="source-link" href={incident.url} target="_blank" rel="noreferrer">
-              Abrir fonte
-            </a>
-          )}
+          <span>CPTEC/INPE</span>
+          <strong>{cptec?.city ? `${cptec.city}-${cptec.uf}` : "Complemento nacional"}</strong>
         </div>
-      </div>
-      <div className="detail-grid">
-        <span>{TYPE_LABELS[incident.type]}</span>
-        <span>{incident.neighborhood}</span>
-        <span>{formatAge(age)}</span>
-        {Number.isFinite(incident.distanceKm) && (
-          <span className="distance-chip">
-            <LocateFixed size={14} />
-            {formatDistance(incident.distanceKm)}
-          </span>
-        )}
-        <RiskPill risk={risk} />
-      </div>
-    </article>
-  );
-}
-
-function IncidentFeed({ incidents, filters, isLoading, hasUserLocation, onFilterChange, onSelect, selectedId }) {
-  return (
-    <section className="panel feed-panel" id="alertas">
-      <div className="panel-heading compact">
-        <div>
-          <p className="eyebrow">{hasUserLocation ? "Ordenado por proximidade" : "Feed priorizado"}</p>
-          <h2>Alertas</h2>
-        </div>
-        <span className="counter">{incidents.length}</span>
-      </div>
-
-      <div className="search-row">
-        <Search size={18} />
-        <input
-          value={filters.query}
-          onChange={(event) => onFilterChange("query", event.target.value)}
-          placeholder="Buscar bairro, via ou fonte"
-          aria-label="Buscar alertas"
-        />
-      </div>
-
-      <div className="filter-stack">
-        <SegmentedControl
-          label="Tipo"
-          value={filters.type}
-          options={Object.entries(TYPE_LABELS)}
-          onChange={(value) => onFilterChange("type", value)}
-        />
-        <SegmentedControl
-          label="Status"
-          value={filters.status}
-          options={Object.entries(STATUS_LABELS)}
-          onChange={(value) => onFilterChange("status", value)}
-        />
-        <select
-          className="select-input"
-          value={filters.severity}
-          onChange={(event) => onFilterChange("severity", event.target.value)}
-          aria-label="Filtrar por severidade"
-        >
-          <option value="todas">Todas as severidades</option>
-          {Object.entries(SEVERITY_LABELS).map(([value, label]) => (
-            <option value={value} key={value}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="incident-list">
-        {isLoading ? (
-          <div className="empty-state">Carregando alertas das APIs…</div>
-        ) : incidents.length === 0 ? (
-          <div className="empty-state">Nenhum alerta real no filtro atual.</div>
-        ) : (
-          incidents.map((incident) => (
-            <IncidentRow
-              key={incident.id}
-              incident={incident}
-              selected={selectedId === incident.id}
-              onClick={() => onSelect(incident.id)}
-            />
-          ))
-        )}
+        <small>{cptec?.days?.[0]?.condition ?? "Disponivel para cidades brasileiras quando a fonte responder."}</small>
       </div>
     </section>
   );
 }
 
-function SegmentedControl({ label, options, value, onChange }) {
+function InfoChip({ icon: Icon, label, value }) {
   return (
-    <div className="segmented-control" aria-label={label}>
-      {options.map(([optionValue, optionLabel]) => (
-        <button
-          type="button"
-          key={optionValue}
-          className={value === optionValue ? "active" : ""}
-          onClick={() => onChange(optionValue)}
-        >
-          {optionLabel}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function IncidentRow({ incident, selected, onClick }) {
-  const risk = calculateRiskScore(incident);
-  const age = getIncidentAgeMinutes(incident);
-  const Icon = INCIDENT_ICONS[incident.type] ?? AlertTriangle;
-
-  return (
-    <button className={`incident-row ${selected ? "selected" : ""}`} type="button" onClick={onClick}>
-      <span className={`incident-icon ${incident.type}`}>
-        <Icon size={18} />
-      </span>
-      <span className="incident-copy">
-        <strong>{incident.title}</strong>
-        <small>{incident.location}</small>
-      </span>
-      <span className="incident-meta">
-        <RiskPill risk={risk} />
-        <small>
-          {Number.isFinite(incident.distanceKm) ? `${formatDistance(incident.distanceKm)} · ` : ""}
-          {formatAge(age)}
-        </small>
-      </span>
-    </button>
-  );
-}
-
-function RiskPill({ risk }) {
-  const band = getRiskBand(risk);
-  const labels = {
-    critico: "Crítico",
-    alto: "Alto",
-    moderado: "Médio",
-    baixo: "Baixo",
-  };
-
-  return (
-    <span className={`risk-pill ${band}`}>
-      {labels[band]} {risk}
+    <span className="info-chip">
+      <Icon size={16} />
+      <span>{label}</span>
+      <strong>{value}</strong>
     </span>
   );
 }
 
-function AnalyticsPanel({ typeChartData, timeWindowData }) {
-  const hasChartData = typeChartData.length > 0 || timeWindowData.some((item) => item.alertas > 0);
-
+function ApodPanel({ apod, neows }) {
   return (
-    <section className="panel analytics-panel" id="dados">
+    <section className="panel apod-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Tendência</p>
-          <h2>Distribuição dos alertas</h2>
+          <p className="eyebrow">NASA APOD</p>
+          <h2>{apod?.title ?? "Imagem astronomica do dia"}</h2>
         </div>
-        <BarChart3 size={22} />
+        <Aperture size={24} />
       </div>
 
-      {hasChartData ? (
-        <>
-          <div className="chart-block">
-            <ResponsiveContainer width="100%" height={210}>
-              <BarChart data={typeChartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="type" tickLine={false} axisLine={false} fontSize={12} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} width={28} />
-                <Tooltip cursor={{ fill: "#f3f4f6" }} />
-                <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                  {typeChartData.map((entry, index) => (
-                    <Cell key={entry.type} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="chart-block">
-            <ResponsiveContainer width="100%" height={190}>
-              <AreaChart data={timeWindowData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-                <XAxis dataKey="janela" tickLine={false} axisLine={false} fontSize={12} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} width={28} />
-                <Tooltip />
-                <Area type="monotone" dataKey="alertas" stroke="#2563eb" fill="#bfdbfe" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </>
+      {apod?.imageUrl ? (
+        <figure className="apod-figure">
+          <img src={apod.imageUrl} alt={apod.title} />
+          <figcaption>
+            <span>{formatDate(apod.date)}</span>
+            {apod.url && (
+              <a href={apod.url} target="_blank" rel="noreferrer" aria-label="Abrir APOD na NASA">
+                <ExternalLink size={16} />
+              </a>
+            )}
+          </figcaption>
+        </figure>
       ) : (
-        <div className="empty-state chart-empty">Gráficos aguardando dados reais das APIs.</div>
+        <EmptyState text="APOD indisponivel no momento." />
+      )}
+
+      <div className="neo-summary">
+        <SummaryItem icon={Satellite} label="Mais proximo" value={formatDistanceKm(neows?.closest?.missDistanceKm)} />
+        <SummaryItem icon={Activity} label="Maior estimado" value={formatValue(neows?.largest?.diameterM, " m")} />
+        <SummaryItem icon={AlertTriangle} label="PHA" value={formatInteger(neows?.hazardousCount)} />
+      </div>
+    </section>
+  );
+}
+
+function SummaryItem({ icon: Icon, label, value }) {
+  return (
+    <span className="summary-item">
+      <Icon size={16} />
+      <small>{label}</small>
+      <strong>{value}</strong>
+    </span>
+  );
+}
+
+function WeatherChart({ weather }) {
+  const data = weather?.hourly ?? [];
+
+  return (
+    <section className="panel chart-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Proximas 24h</p>
+          <h2>Temperatura e chuva</h2>
+        </div>
+        <Activity size={24} />
+      </div>
+
+      {data.length > 0 ? (
+        <ResponsiveContainer width="100%" height={280}>
+          <AreaChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#d7dee8" />
+            <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={12} />
+            <YAxis yAxisId="left" tickLine={false} axisLine={false} fontSize={12} width={32} />
+            <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} fontSize={12} width={32} />
+            <Tooltip />
+            <Area
+              yAxisId="left"
+              type="monotone"
+              dataKey="temperature"
+              name="Temp. C"
+              stroke="#0f766e"
+              fill="#ccfbf1"
+              strokeWidth={2}
+            />
+            <Area
+              yAxisId="right"
+              type="monotone"
+              dataKey="rainProbability"
+              name="Chuva %"
+              stroke="#2563eb"
+              fill="#dbeafe"
+              strokeWidth={2}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
+      ) : (
+        <EmptyState text="Grafico aguardando dados horarios." />
       )}
     </section>
   );
 }
 
-function HotspotsPanel({ hotspots }) {
+function DailyForecast({ weather, cptec }) {
+  const daily = weather?.daily ?? [];
+
   return (
-    <section className="panel hotspots-panel">
+    <section className="panel forecast-panel">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">Prioridade</p>
-          <h2>Pontos de atenção</h2>
+          <p className="eyebrow">7 dias</p>
+          <h2>Previsao consolidada</h2>
         </div>
-        <MapPin size={22} />
+        <CalendarDays size={24} />
       </div>
 
-      <div className="hotspot-list">
-        {hotspots.length === 0 ? (
-          <div className="empty-state compact">Sem pontos de atenção retornados.</div>
-        ) : (
-          hotspots.map((hotspot) => (
-            <div className="hotspot-row" key={hotspot.neighborhood}>
-              <div>
-                <strong>{hotspot.neighborhood}</strong>
-                <small>
-                  {hotspot.total} alertas, {hotspot.active} ativos
-                </small>
-              </div>
-              <RiskPill risk={hotspot.risk} />
-            </div>
-          ))
-        )}
+      {daily.length > 0 ? (
+        <>
+          <div className="forecast-list">
+            {daily.map((day) => (
+              <article className="forecast-day" key={day.date}>
+                <div>
+                  <strong>{formatWeekday(day.date)}</strong>
+                  <span>{day.condition}</span>
+                </div>
+                <div className="forecast-values">
+                  <span>{formatValue(day.max, "C")}</span>
+                  <small>{formatValue(day.min, "C")}</small>
+                </div>
+                <div className="rain-bar" aria-label={`Chuva ${formatValue(day.rainProbability, "%")}`}>
+                  <span style={{ width: `${Math.min(100, Number(day.rainProbability ?? 0))}%` }} />
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="cptec-days">
+            {(cptec?.days ?? []).slice(0, 4).map((day) => (
+              <span key={day.date}>
+                <strong>{formatShortDate(day.date)}</strong>
+                {day.condition}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : (
+        <EmptyState text="Previsao diaria indisponivel." />
+      )}
+    </section>
+  );
+}
+
+function NearEarthPanel({ neows, cad }) {
+  const neoItems = neows?.items ?? [];
+
+  return (
+    <section className="panel near-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Asteroides e cometas</p>
+          <h2>Aproximacoes da Terra</h2>
+        </div>
+        <Rocket size={24} />
+      </div>
+
+      <div className="approach-columns">
+        <div>
+          <h3>NeoWs</h3>
+          <div className="event-list">
+            {neoItems.length > 0 ? (
+              neoItems.slice(0, 5).map((item) => <NeoRow key={item.id} item={item} />)
+            ) : (
+              <EmptyState text="NeoWs sem objetos no recorte atual." compact />
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h3>JPL CAD</h3>
+          <div className="event-list">
+            {cad.length > 0 ? (
+              cad.slice(0, 5).map((item) => <CadRow key={`${item.designation}-${item.date}`} item={item} />)
+            ) : (
+              <EmptyState text="CAD sem aproximacoes no recorte atual." compact />
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );
 }
 
-function SourcesPanel({ sources }) {
+function NeoRow({ item }) {
+  return (
+    <article className="event-row">
+      <span className={`event-dot ${item.hazardous ? "danger" : ""}`} />
+      <div>
+        <strong>{item.name}</strong>
+        <small>{item.approachDate}</small>
+      </div>
+      <div className="event-meta">
+        <span>{formatDistanceKm(item.missDistanceKm)}</span>
+        <small>{formatValue(item.velocityKmS, " km/s")}</small>
+      </div>
+    </article>
+  );
+}
+
+function CadRow({ item }) {
+  return (
+    <article className="event-row">
+      <span className="event-dot amber" />
+      <div>
+        <strong>{item.name}</strong>
+        <small>{item.date}</small>
+      </div>
+      <div className="event-meta">
+        <span>{formatValue(item.distanceAu, " au")}</span>
+        <small>{formatValue(item.velocityKmS, " km/s")}</small>
+      </div>
+    </article>
+  );
+}
+
+function FireballPanel({ fireballs }) {
+  const chartData = fireballs.slice(0, 6).map((item, index) => ({
+    name: `${index + 1}`,
+    energia: item.impactEnergyKt ?? 0,
+  }));
+
+  return (
+    <section className="panel fireball-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Meteoros</p>
+          <h2>Bolas de fogo recentes</h2>
+        </div>
+        <Flame size={24} />
+      </div>
+
+      {fireballs.length > 0 ? (
+        <>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#d7dee8" />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} />
+              <YAxis tickLine={false} axisLine={false} fontSize={12} width={34} />
+              <Tooltip />
+              <Bar dataKey="energia" name="Impacto kt" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+
+          <div className="event-list">
+            {fireballs.slice(0, 4).map((item) => (
+              <article className="event-row" key={`${item.date}-${item.latitude}-${item.longitude}`}>
+                <span className="event-dot rose" />
+                <div>
+                  <strong>{formatDateTime(item.date)}</strong>
+                  <small>{formatCoordinates(item)}</small>
+                </div>
+                <div className="event-meta">
+                  <span>{formatValue(item.impactEnergyKt, " kt")}</span>
+                  <small>{formatValue(item.altitudeKm, " km alt.")}</small>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : (
+        <EmptyState text="Fireball API sem registros recentes no recorte atual." />
+      )}
+    </section>
+  );
+}
+
+function MarsPanel({ photos }) {
+  return (
+    <section className="panel mars-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Marte</p>
+          <h2>Curiosity rover</h2>
+        </div>
+        <Rocket size={24} />
+      </div>
+
+      {photos.length > 0 ? (
+        <div className="photo-grid">
+          {photos.slice(0, 4).map((photo) => (
+            <figure className="media-tile" key={photo.id}>
+              <img src={photo.imageUrl} alt={`${photo.rover} ${photo.camera}`} loading="lazy" />
+              <figcaption>
+                <strong>{photo.camera}</strong>
+                <span>
+                  Sol {photo.sol} | {formatShortDate(photo.earthDate)}
+                </span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <EmptyState text="Mars Rover Photos indisponivel no momento." />
+      )}
+    </section>
+  );
+}
+
+function NasaLibraryPanel({ images, imageDraft, onDraftChange, onSubmit }) {
+  return (
+    <section className="panel library-panel">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">NASA Image Library</p>
+          <h2>Galeria pesquisavel</h2>
+        </div>
+        <ImageIcon size={24} />
+      </div>
+
+      <form className="library-search" onSubmit={onSubmit}>
+        <Search size={18} />
+        <input
+          value={imageDraft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          placeholder="Ex.: nebula, mars, earth"
+          aria-label="Buscar imagens na NASA"
+        />
+        <button type="submit">Buscar</button>
+      </form>
+
+      {images.length > 0 ? (
+        <div className="library-strip">
+          {images.slice(0, 6).map((image) => (
+            <figure className="media-tile compact" key={image.nasaId || image.imageUrl}>
+              <img src={image.imageUrl} alt={image.title} loading="lazy" />
+              <figcaption>
+                <strong>{image.title}</strong>
+                <span>{image.center || formatShortDate(image.date)}</span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <EmptyState text="Nenhuma imagem retornada para a busca atual." />
+      )}
+    </section>
+  );
+}
+
+function SourcesPanel({ sources, fetchedAt }) {
   return (
     <section className="panel sources-panel">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">Fontes</p>
-          <h2>Integrações</h2>
+          <h2>Integracoes ativas</h2>
         </div>
-        <Database size={22} />
+        <Database size={24} />
       </div>
 
       <div className="source-list">
         {sources.map((source) => (
           <article className="source-row" key={source.id}>
             <div>
-              <strong>{source.name}</strong>
+              <strong>{source.label}</strong>
               <small>{source.detail}</small>
             </div>
-            <span className={`source-status ${source.status}`}>
-              {SOURCE_BADGE_LABELS[source.status] ?? source.cadence}
-            </span>
+            <span className={`source-status ${source.state}`}>{SOURCE_LABELS[source.state] ?? source.state}</span>
           </article>
         ))}
       </div>
+
+      <footer className="panel-footer">
+        <Globe2 size={16} />
+        Ultima consulta {fetchedAt ? formatTime(fetchedAt) : "pendente"}
+      </footer>
     </section>
   );
+}
+
+function EmptyState({ text, compact = false }) {
+  return <div className={`empty-state ${compact ? "compact" : ""}`}>{text}</div>;
+}
+
+function formatValue(value, suffix = "") {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  return `${number.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}${suffix}`;
+}
+
+function formatInteger(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  return number.toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+}
+
+function formatDistanceKm(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "--";
+  if (number >= 1000000) return `${(number / 1000000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi km`;
+  return `${Math.round(number).toLocaleString("pt-BR")} km`;
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+}
+
+function formatShortDate(value) {
+  if (!value) return "";
+  const date = new Date(value.includes("T") ? value : `${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
+function formatWeekday(value) {
+  if (!value) return "";
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit" });
+}
+
+function formatTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "pendente";
+  return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDateTime(value) {
+  if (!value) return "--";
+  const date = new Date(value.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatCoordinates(item) {
+  if (!Number.isFinite(item.latitude) || !Number.isFinite(item.longitude)) return "Local nao informado";
+  return `${Math.abs(item.latitude).toFixed(1)}${item.latitude < 0 ? "S" : "N"}, ${Math.abs(item.longitude).toFixed(1)}${
+    item.longitude < 0 ? "W" : "E"
+  }`;
 }
 
 export default App;

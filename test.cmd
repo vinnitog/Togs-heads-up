@@ -1,6 +1,8 @@
 ﻿@echo off
 setlocal
 cd /d "%~dp0"
-npm.cmd test
+call npm.cmd test
+if errorlevel 1 exit /b %errorlevel%
+call npm.cmd run build
 exit /b %errorlevel%
 
