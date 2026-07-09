@@ -272,6 +272,99 @@ test("fetchEarthSpaceDashboard aggregates sources without live network", async (
   assert.equal(result.sources.find((source) => source.id === "weather").state, "online");
 });
 
+function makeStorage(initial = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: (key) => (map.has(key) ? map.get(key) : null),
+    setItem: (key, value) => map.set(key, value),
+    removeItem: (key) => map.delete(key),
+  };
+}
+
+const WEATHER_CACHE_KEY = `togs-cache:v1:weather:${DEFAULT_LOCATION.latitude},${DEFAULT_LOCATION.longitude}`;
+
+function baseDashboardFetch(overrides = {}, requestedUrls = []) {
+  return async (url) => {
+    requestedUrls.push(url);
+    if (url.includes("api.open-meteo.com") && overrides.weather) return overrides.weather(url);
+    if (url.includes("api.open-meteo.com")) {
+      return { ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 24 }, daily: { time: [] }, hourly: { time: [] } }) };
+    }
+    if (url.includes("servicos.cptec.inpe.br")) return { ok: true, text: async () => "<cidade><nome>Marilia</nome><uf>SP</uf></cidade>" };
+    if (url.includes("planetary/apod")) return { ok: true, json: async () => ({ title: "APOD", media_type: "image", url: "https://example.test/apod.jpg" }) };
+    if (url.includes("neo/rest")) return { ok: true, json: async () => ({ element_count: 0, near_earth_objects: {} }) };
+    if (url.includes("cad.api") || url.includes("fireball.api")) return { ok: true, json: async () => ({ fields: ["date"], data: [] }) };
+    if (url.includes("mars-photos")) return { ok: true, json: async () => ({ photos: [] }) };
+    return { ok: false, status: 404, json: async () => ({}) };
+  };
+}
+
+test("fresh cache skips the network call for that source", async () => {
+  const storage = makeStorage({
+    [WEATHER_CACHE_KEY]: JSON.stringify({ storedAt: Date.now(), value: { current: { temperature: 21 }, daily: [], hourly: [] } }),
+  });
+  const requestedUrls = [];
+
+  const result = await fetchEarthSpaceDashboard({ storage, fetchImpl: baseDashboardFetch({}, requestedUrls) });
+
+  assert.equal(result.weather.current.temperature, 21);
+  assert.ok(!requestedUrls.some((url) => url.includes("api.open-meteo.com")));
+  assert.equal(result.sources.find((source) => source.id === "weather").state, "online");
+});
+
+test("stale cache is served when the refresh fails", async () => {
+  const staleValue = { current: { temperature: 19 }, daily: [], hourly: [] };
+  const storage = makeStorage({
+    [WEATHER_CACHE_KEY]: JSON.stringify({ storedAt: Date.now() - 30 * 60 * 1000, value: staleValue }),
+  });
+
+  const result = await fetchEarthSpaceDashboard({
+    storage,
+    fetchImpl: baseDashboardFetch({ weather: async () => ({ ok: false, status: 429, json: async () => ({}) }) }),
+  });
+
+  assert.equal(result.weather.current.temperature, 19);
+  assert.equal(result.sources.find((source) => source.id === "weather").state, "cache");
+  assert.ok(result.warnings.some((warning) => warning.includes("cache")));
+});
+
+test("forceRefresh bypasses a fresh cache", async () => {
+  const storage = makeStorage({
+    [WEATHER_CACHE_KEY]: JSON.stringify({ storedAt: Date.now(), value: { current: { temperature: 21 }, daily: [], hourly: [] } }),
+  });
+  const requestedUrls = [];
+
+  const result = await fetchEarthSpaceDashboard({
+    storage,
+    forceRefresh: true,
+    fetchImpl: baseDashboardFetch(
+      { weather: async () => ({ ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 30 }, daily: { time: [] }, hourly: { time: [] } }) }) },
+      requestedUrls,
+    ),
+  });
+
+  assert.equal(result.weather.current.temperature, 30);
+  assert.ok(requestedUrls.some((url) => url.includes("api.open-meteo.com")));
+});
+
+test("transient network failure is retried before giving up", async () => {
+  let weatherCalls = 0;
+
+  const result = await fetchEarthSpaceDashboard({
+    fetchImpl: baseDashboardFetch({
+      weather: async () => {
+        weatherCalls += 1;
+        if (weatherCalls === 1) throw new TypeError("Failed to fetch");
+        return { ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 25 }, daily: { time: [] }, hourly: { time: [] } }) };
+      },
+    }),
+  });
+
+  assert.equal(weatherCalls, 2);
+  assert.equal(result.weather.current.temperature, 25);
+  assert.equal(result.sources.find((source) => source.id === "weather").state, "online");
+});
+
 test("fetchEarthSpaceDashboard keeps useful data when one space source fails", async () => {
   const result = await fetchEarthSpaceDashboard({
     now: new Date("2026-07-09T12:00:00Z"),

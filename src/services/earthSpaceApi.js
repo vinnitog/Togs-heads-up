@@ -17,6 +17,100 @@ const CPTEC_BASE_URL = "https://servicos.cptec.inpe.br/XML";
 const NASA_API_BASE_URL = "https://api.nasa.gov";
 const JPL_SSD_BASE_URL = "https://ssd-api.jpl.nasa.gov";
 
+// Cache local (localStorage) para evitar rate limit e falhas transitorias.
+// Cada fonte so vai a rede quando o cache "fresco" expira (TTL). Se a rede
+// falhar, exibimos o ultimo valor bom enquanto ele nao estiver muito velho.
+const CACHE_PREFIX = "togs-cache:v1:";
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+
+const CACHE_TTL_MS = {
+  weather: 15 * MINUTE,
+  cptec: 3 * HOUR,
+  apod: 6 * HOUR,
+  neows: 6 * HOUR,
+  cad: 6 * HOUR,
+  fireballs: 3 * HOUR,
+  marsPhotos: 12 * HOUR,
+};
+
+// Ate quando um valor expirado ainda serve como fallback em caso de falha.
+const CACHE_STALE_MAX_MS = 24 * HOUR;
+
+function delay(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(resolve, ms);
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timeoutId);
+        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+        return;
+      }
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timeoutId);
+          reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+        },
+        { once: true },
+      );
+    }
+  });
+}
+
+function getDefaultStorage() {
+  try {
+    if (typeof globalThis !== "undefined" && globalThis.localStorage) {
+      return globalThis.localStorage;
+    }
+  } catch {
+    // Acesso a localStorage pode lancar (modo privativo/SSR). Segue sem cache.
+  }
+  return null;
+}
+
+function readCacheEntry(storage, key) {
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(CACHE_PREFIX + key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.storedAt !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheEntry(storage, key, value) {
+  if (!storage) return;
+  try {
+    storage.setItem(CACHE_PREFIX + key, JSON.stringify({ storedAt: Date.now(), value }));
+  } catch {
+    // Cota cheia ou storage indisponivel: ignora, cache e best-effort.
+  }
+}
+
+function isRetriableError(error) {
+  if (!error || error.name === "AbortError") return false;
+  const status = error.status;
+  // Sem status = falha de rede/CORS. 5xx transitorio. Nunca 429 (rate limit).
+  return status === undefined || status === 502 || status === 503 || status === 504;
+}
+
+async function withRetry(fn, { retries = 1, baseDelayMs = 500, signal } = {}) {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= retries || !isRetriableError(error)) throw error;
+      attempt += 1;
+      await delay(baseDelayMs * attempt, signal);
+    }
+  }
+}
+
 const WMO_DESCRIPTIONS = {
   0: "Ceu limpo",
   1: "Poucas nuvens",
@@ -180,7 +274,9 @@ async function request(url, { fetchImpl, signal, timeoutMs, accept }) {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const error = new Error(`HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
     }
 
     return response;
@@ -567,20 +663,25 @@ export async function fetchEarthSpaceDashboard({
   signal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   now = new Date(),
+  storage = getDefaultStorage(),
+  forceRefresh = false,
 } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponivel neste ambiente.");
 
   const apiKey = getNasaApiKey(env);
   const options = { fetchImpl, signal, timeoutMs };
+  const locationScope = `${location.latitude},${location.longitude}`;
   const tasks = [
     {
       key: "weather",
       label: "Open-Meteo",
+      scope: locationScope,
       run: async () => normalizeWeatherPayload(await fetchJson(buildOpenMeteoForecastUrl(location), options), location),
     },
     {
       key: "cptec",
       label: "CPTEC/INPE",
+      scope: locationScope,
       run: async () => fetchCptecForecastForLocation(location, options),
     },
     {
@@ -610,30 +711,18 @@ export async function fetchEarthSpaceDashboard({
     },
   ];
 
-  const settled = await Promise.allSettled(tasks.map((task) => task.run()));
+  const outcomes = await Promise.all(
+    tasks.map((task) => runDashboardTask(task, { storage, forceRefresh, signal })),
+  );
+
   const data = {};
   const sources = [];
   const warnings = [];
 
-  settled.forEach((result, index) => {
-    const task = tasks[index];
-
-    if (result.status === "fulfilled") {
-      data[task.key] = result.value;
-      sources.push(
-        createSourceStatus(
-          task.key,
-          task.label,
-          hasUsefulData(result.value) ? "online" : "sem-dados",
-          hasUsefulData(result.value) ? "Dados recebidos" : "Fonte respondeu sem dados para o recorte atual",
-        ),
-      );
-      return;
-    }
-
-    data[task.key] = ["weather", "cptec", "apod", "neows"].includes(task.key) ? null : [];
-    sources.push(createSourceStatus(task.key, task.label, "erro", result.reason?.message ?? "Falha desconhecida"));
-    warnings.push(`${task.label}: ${result.reason?.message ?? "falha ao consultar"}`);
+  outcomes.forEach((outcome) => {
+    data[outcome.key] = outcome.value;
+    sources.push(createSourceStatus(outcome.key, outcome.label, outcome.state, outcome.detail));
+    if (outcome.warning) warnings.push(outcome.warning);
   });
 
   return {
@@ -642,5 +731,70 @@ export async function fetchEarthSpaceDashboard({
     sources,
     warnings,
     fetchedAt: new Date().toISOString(),
+  };
+}
+
+const EMPTY_TASK_VALUE = { weather: null, cptec: null, apod: null, neows: null };
+
+function emptyValueForTask(key) {
+  return key in EMPTY_TASK_VALUE ? EMPTY_TASK_VALUE[key] : [];
+}
+
+async function runDashboardTask(task, { storage, forceRefresh, signal }) {
+  const cacheKey = `${task.key}:${task.scope ?? "global"}`;
+  const cached = readCacheEntry(storage, cacheKey);
+  const ttl = CACHE_TTL_MS[task.key] ?? 0;
+  const ageMs = cached ? Date.now() - cached.storedAt : Infinity;
+
+  // Cache fresco: nao vai a rede (principal defesa contra rate limit).
+  if (!forceRefresh && cached && ttl > 0 && ageMs < ttl) {
+    return buildOutcome(task, cached.value, { fromCache: true });
+  }
+
+  try {
+    const value = await withRetry(() => task.run(), { retries: 1, baseDelayMs: 500, signal });
+    writeCacheEntry(storage, cacheKey, value);
+    return buildOutcome(task, value, { fromCache: false });
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+
+    const message = error?.message ?? "falha ao consultar";
+
+    // Falhou, mas temos cache ainda utilizavel: mostra o ultimo valor bom.
+    if (cached && ageMs < CACHE_STALE_MAX_MS) {
+      return {
+        key: task.key,
+        label: task.label,
+        value: cached.value,
+        state: "cache",
+        detail: `Sem atualizar (${message}); exibindo ultimo dado salvo`,
+        warning: `${task.label}: ${message} (usando cache)`,
+      };
+    }
+
+    return {
+      key: task.key,
+      label: task.label,
+      value: emptyValueForTask(task.key),
+      state: "erro",
+      detail: message,
+      warning: `${task.label}: ${message}`,
+    };
+  }
+}
+
+function buildOutcome(task, value, { fromCache }) {
+  const useful = hasUsefulData(value);
+  return {
+    key: task.key,
+    label: task.label,
+    value,
+    state: useful ? "online" : "sem-dados",
+    detail: useful
+      ? fromCache
+        ? "Dados em cache (recentes)"
+        : "Dados recebidos"
+      : "Fonte respondeu sem dados para o recorte atual",
+    warning: null,
   };
 }
