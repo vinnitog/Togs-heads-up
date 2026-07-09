@@ -399,6 +399,36 @@ test("a source blocked by CORS falls back to the proxy", async () => {
   assert.ok(requestedUrls.some((url) => url.includes("allorigins")));
 });
 
+test("a per-request timeout does not discard the whole dashboard", async () => {
+  const result = await fetchEarthSpaceDashboard({
+    fetchImpl: async (url) => {
+      // fireball estoura o tempo limite da propria requisicao (AbortError),
+      // mas o signal do painel NAO foi abortado -> falha isolada.
+      if (url.includes("fireball.api")) {
+        const error = new Error("The operation was aborted");
+        error.name = "AbortError";
+        throw error;
+      }
+      if (url.includes("api.open-meteo.com")) {
+        return { ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 26 }, daily: { time: [] }, hourly: { time: [] } }) };
+      }
+      if (url.includes("servicos.cptec.inpe.br") || url.includes("allorigins")) {
+        return { ok: true, text: async () => "<cidade><nome>Marilia</nome><uf>SP</uf></cidade>" };
+      }
+      if (url.includes("planetary/apod")) return { ok: true, json: async () => ({ title: "APOD", media_type: "image", url: "https://example.test/apod.jpg" }) };
+      if (url.includes("neo/rest")) return { ok: true, json: async () => ({ element_count: 0, near_earth_objects: {} }) };
+      if (url.includes("cad.api")) return { ok: true, json: async () => ({ fields: ["date"], data: [] }) };
+      if (url.includes("mars-photos")) return { ok: true, json: async () => ({ photos: [] }) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    },
+  });
+
+  // O painel resolve (nao rejeita) e mantem as fontes que funcionaram.
+  assert.equal(result.weather.current.temperature, 26);
+  assert.equal(result.sources.find((source) => source.id === "fireballs").state, "erro");
+  assert.deepEqual(result.fireballs, []);
+});
+
 test("fetchEarthSpaceDashboard keeps useful data when one space source fails", async () => {
   const result = await fetchEarthSpaceDashboard({
     now: new Date("2026-07-09T12:00:00Z"),

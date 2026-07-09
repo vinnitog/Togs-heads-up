@@ -320,15 +320,10 @@ function isNetworkError(error) {
 async function request(url, options) {
   const proxied = options.viaProxy ? null : buildProxiedUrl(url, options.corsProxy);
 
-  // Fontes sem CORS: tenta primeiro pelo proxy; se o proxy falhar, tenta direto
-  // como ultimo recurso (caso o CORS esteja liberado naquele momento).
-  if (proxied && proxied !== url && needsProxy(url)) {
-    try {
-      return await rawRequest(proxied, { ...options, viaProxy: true });
-    } catch (proxyError) {
-      if (proxyError?.name === "AbortError") throw proxyError;
-      return rawRequest(url, { ...options, viaProxy: true });
-    }
+  // Fontes sem CORS (CPTEC/JPL): so pelo proxy. Tentar direto sempre falha por
+  // CORS, poluindo o console e disparando retry a toa, entao nem tentamos.
+  if (needsProxy(url) && proxied && proxied !== url) {
+    return rawRequest(proxied, { ...options, viaProxy: true });
   }
 
   // Demais fontes: direto, com fallback para o proxy so em erro de rede/CORS.
@@ -813,9 +808,12 @@ async function runDashboardTask(task, { storage, forceRefresh, signal }) {
     writeCacheEntry(storage, cacheKey, value);
     return buildOutcome(task, value, { fromCache: false });
   } catch (error) {
-    if (error?.name === "AbortError") throw error;
+    // Aborto real (usuario/efeito trocou de local): descarta o painel inteiro.
+    if (signal?.aborted) throw error;
 
-    const message = error?.message ?? "falha ao consultar";
+    // AbortError aqui sem signal abortado = timeout DA PROPRIA requisicao.
+    // Trata como falha isolada: as demais fontes continuam aparecendo.
+    const message = error?.name === "AbortError" ? "tempo limite excedido" : error?.message ?? "falha ao consultar";
 
     // Falhou, mas temos cache ainda utilizavel: mostra o ultimo valor bom.
     if (cached && ageMs < CACHE_STALE_MAX_MS) {
