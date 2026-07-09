@@ -365,6 +365,40 @@ test("transient network failure is retried before giving up", async () => {
   assert.equal(result.sources.find((source) => source.id === "weather").state, "online");
 });
 
+test("a source blocked by CORS falls back to the proxy", async () => {
+  const requestedUrls = [];
+
+  const result = await fetchEarthSpaceDashboard({
+    fetchImpl: async (url) => {
+      requestedUrls.push(url);
+
+      // Requisicao via proxy (allorigins) devolve o XML do CPTEC.
+      if (url.includes("allorigins")) {
+        return {
+          ok: true,
+          text: async () =>
+            "<cidade><nome>Marilia</nome><uf>SP</uf><previsao><dia>2026-07-09</dia><tempo>ps</tempo><maxima>28</maxima><minima>15</minima><iuv>6</iuv></previsao></cidade>",
+        };
+      }
+      // CPTEC direto: bloqueado por CORS (TypeError sem status HTTP).
+      if (url.includes("servicos.cptec.inpe.br")) throw new TypeError("Failed to fetch");
+
+      if (url.includes("api.open-meteo.com")) {
+        return { ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 24 }, daily: { time: [] }, hourly: { time: [] } }) };
+      }
+      if (url.includes("planetary/apod")) return { ok: true, json: async () => ({ title: "APOD", media_type: "image", url: "https://example.test/apod.jpg" }) };
+      if (url.includes("neo/rest")) return { ok: true, json: async () => ({ element_count: 0, near_earth_objects: {} }) };
+      if (url.includes("cad.api") || url.includes("fireball.api")) return { ok: true, json: async () => ({ fields: ["date"], data: [] }) };
+      if (url.includes("mars-photos")) return { ok: true, json: async () => ({ photos: [] }) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    },
+  });
+
+  assert.equal(result.cptec.city, "Marilia");
+  assert.equal(result.sources.find((source) => source.id === "cptec").state, "online");
+  assert.ok(requestedUrls.some((url) => url.includes("allorigins")));
+});
+
 test("fetchEarthSpaceDashboard keeps useful data when one space source fails", async () => {
   const result = await fetchEarthSpaceDashboard({
     now: new Date("2026-07-09T12:00:00Z"),

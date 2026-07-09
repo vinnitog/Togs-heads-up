@@ -40,6 +40,13 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # Defina o secret no repositorio (Settings > Secrets > Actions).
+          # Sem VITE_NASA_API_KEY o build usa DEMO_KEY (limite ~30 req/h -> HTTP 429).
+          # VITE_CORS_PROXY nao e injetado de proposito: assim o proxy padrao
+          # (allorigins) continua ativo para CPTEC/JPL. Para trocar/desativar,
+          # ajuste o valor no .env local de build.
+          VITE_NASA_API_KEY: ${{ secrets.VITE_NASA_API_KEY }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

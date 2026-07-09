@@ -1,4 +1,4 @@
-const CACHE_NAME = "togs-heads-up-v7";
+const CACHE_NAME = "togs-heads-up-v8";
 const toScopeUrl = (path) => new URL(path, self.registration.scope).toString();
 const INDEX_URL = toScopeUrl("index.html");
 const APP_SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg"].map(toScopeUrl);
@@ -41,8 +41,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Fontes externas / dados dinamicos: nao interceptar. Deixa o browser fazer a
+  // requisicao direto, para que o proprio app trate erros (CORS, 429, rede) sem
+  // gerar rejeicoes nao capturadas dentro do service worker.
   if (isExternalRequest || acceptsDynamicData || requestUrl.pathname.includes("/api/")) {
-    event.respondWith(fetch(request));
     return;
   }
 
