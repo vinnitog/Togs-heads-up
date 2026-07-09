@@ -37,6 +37,25 @@ const CACHE_TTL_MS = {
 // Ate quando um valor expirado ainda serve como fallback em caso de falha.
 const CACHE_STALE_MAX_MS = 24 * HOUR;
 
+// Proxy de CORS para fontes que nao enviam Access-Control-Allow-Origin
+// (CPTEC/INPE e JPL SSD). Configuravel via VITE_CORS_PROXY; use {url} como
+// marcador do endpoint alvo. Padrao: allorigins (GET publico, sem chave).
+const DEFAULT_CORS_PROXY = "https://api.allorigins.win/raw?url={url}";
+
+function getCorsProxy(env = readViteEnv()) {
+  // String vazia desativa o proxy explicitamente.
+  const configured = env.VITE_CORS_PROXY;
+  if (configured === "" ) return "";
+  return normalizeText(configured, DEFAULT_CORS_PROXY);
+}
+
+function buildProxiedUrl(targetUrl, proxyTemplate) {
+  const template = normalizeText(proxyTemplate);
+  if (!template) return null;
+  const encoded = encodeURIComponent(targetUrl);
+  return template.includes("{url}") ? template.replace("{url}", encoded) : `${template}${encoded}`;
+}
+
 function delay(ms, signal) {
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(resolve, ms);
@@ -264,7 +283,7 @@ function mergeSignals(parentSignal, timeoutMs) {
   };
 }
 
-async function request(url, { fetchImpl, signal, timeoutMs, accept }) {
+async function rawRequest(url, { fetchImpl, signal, timeoutMs, accept }) {
   const requestSignal = mergeSignals(signal, timeoutMs);
 
   try {
@@ -282,6 +301,44 @@ async function request(url, { fetchImpl, signal, timeoutMs, accept }) {
     return response;
   } finally {
     requestSignal.cleanup();
+  }
+}
+
+// Hosts conhecidos por nao enviarem cabecalhos CORS: vao direto pelo proxy,
+// evitando o erro de CORS ruidoso no console antes de um fallback.
+const NO_CORS_HOSTS = ["servicos.cptec.inpe.br", "ssd-api.jpl.nasa.gov"];
+
+function needsProxy(url) {
+  return NO_CORS_HOSTS.some((host) => url.includes(host));
+}
+
+// Erro de rede/CORS chega como TypeError sem status HTTP.
+function isNetworkError(error) {
+  return Boolean(error) && error.name !== "AbortError" && error.status === undefined;
+}
+
+async function request(url, options) {
+  const proxied = options.viaProxy ? null : buildProxiedUrl(url, options.corsProxy);
+
+  // Fontes sem CORS: tenta primeiro pelo proxy; se o proxy falhar, tenta direto
+  // como ultimo recurso (caso o CORS esteja liberado naquele momento).
+  if (proxied && proxied !== url && needsProxy(url)) {
+    try {
+      return await rawRequest(proxied, { ...options, viaProxy: true });
+    } catch (proxyError) {
+      if (proxyError?.name === "AbortError") throw proxyError;
+      return rawRequest(url, { ...options, viaProxy: true });
+    }
+  }
+
+  // Demais fontes: direto, com fallback para o proxy so em erro de rede/CORS.
+  try {
+    return await rawRequest(url, options);
+  } catch (error) {
+    if (isNetworkError(error) && proxied && proxied !== url) {
+      return rawRequest(proxied, { ...options, viaProxy: true });
+    }
+    throw error;
   }
 }
 
@@ -669,7 +726,7 @@ export async function fetchEarthSpaceDashboard({
   if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponivel neste ambiente.");
 
   const apiKey = getNasaApiKey(env);
-  const options = { fetchImpl, signal, timeoutMs };
+  const options = { fetchImpl, signal, timeoutMs, corsProxy: getCorsProxy(env) };
   const locationScope = `${location.latitude},${location.longitude}`;
   const tasks = [
     {
