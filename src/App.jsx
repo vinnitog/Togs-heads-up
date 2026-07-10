@@ -40,6 +40,7 @@ import {
   DEFAULT_LOCATION,
   buildLocationLabel,
   fetchEarthSpaceDashboard,
+  resolveLocationFromCoords,
   searchLocations,
 } from "./services/earthSpaceApi.js";
 import { fetchIncidents } from "./services/incidentsApi.js";
@@ -119,6 +120,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLocalLoading, setIsLocalLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [geoState, setGeoState] = useState("off");
   const [loadError, setLoadError] = useState("");
   const [localError, setLocalError] = useState("");
   const [notice, setNotice] = useState("");
@@ -248,6 +250,7 @@ function App() {
     setLocation(nextLocation);
     setLocationQuery(buildLocationLabel(nextLocation));
     setLocationResults([]);
+    setGeoState("off");
     setNotice(`Local: ${buildLocationLabel(nextLocation)}`);
   }
 
@@ -256,6 +259,47 @@ function App() {
     setLocationQuery("Marília-SP");
     setLocationResults([]);
     setNotice("Local: Marília-SP");
+  }
+
+  function readCurrentPosition() {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        timeout: 10000,
+        maximumAge: 5 * 60 * 1000,
+      });
+    });
+  }
+
+  async function toggleGeolocation() {
+    if (geoState === "on") {
+      setGeoState("off");
+      resetLocation();
+      return;
+    }
+
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setNotice("Geolocalização não suportada neste navegador.");
+      return;
+    }
+
+    setGeoState("loading");
+
+    try {
+      const position = await readCurrentPosition();
+      const nextLocation = await resolveLocationFromCoords({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      });
+
+      setLocation(nextLocation);
+      setLocationQuery(buildLocationLabel(nextLocation));
+      setLocationResults([]);
+      setGeoState("on");
+      setNotice(`Local: ${buildLocationLabel(nextLocation)}`);
+    } catch (error) {
+      setGeoState("off");
+      setNotice(describeGeolocationError(error));
+    }
   }
 
   function refreshAll() {
@@ -279,6 +323,22 @@ function App() {
               Offline
             </span>
           )}
+
+          <button
+            className={`ghost-button ${geoState === "on" ? "active" : ""}`}
+            type="button"
+            onClick={toggleGeolocation}
+            disabled={geoState === "loading"}
+            aria-pressed={geoState === "on"}
+            title={
+              geoState === "on"
+                ? "Desativar e voltar para Marília-SP"
+                : "Usar a localização do navegador"
+            }
+          >
+            <LocateFixed size={16} />
+            {geoState === "loading" ? "Localizando" : "Localização"}
+          </button>
 
           <button className="icon-button" type="button" onClick={refreshAll} aria-label="Atualizar painel">
             <RefreshCw size={18} className={isLoading || isLocalLoading ? "spin" : ""} />
@@ -324,7 +384,6 @@ function App() {
                 onQueryChange: setLocationQuery,
                 onSubmit: handleLocationSubmit,
                 onSelect: selectLocation,
-                onReset: resetLocation,
               }}
             />
           )}
@@ -407,8 +466,8 @@ function SummaryLine({ icon: Icon, label, value, detail }) {
 
 function LocationBar({ search }) {
   return (
-    <div className="location-bar">
-      <form className="location-search" onSubmit={search.onSubmit}>
+    <form className="location-bar" onSubmit={search.onSubmit}>
+      <div className="location-search">
         <Search size={18} />
         <input
           value={search.query}
@@ -416,19 +475,10 @@ function LocationBar({ search }) {
           placeholder="Buscar cidade ou local"
           aria-label="Buscar cidade ou local"
         />
-        <button type="submit" disabled={search.isSearching}>
-          {search.isSearching ? "Buscando" : "Buscar"}
-        </button>
-      </form>
+      </div>
 
-      <button
-        className="ghost-button"
-        type="button"
-        onClick={search.onReset}
-        title="Voltar para o local padrão (Marília-SP)"
-      >
-        <LocateFixed size={16} />
-        Localização
+      <button className="search-button" type="submit" disabled={search.isSearching}>
+        {search.isSearching ? "Buscando" : "Buscar"}
       </button>
 
       {search.results.length > 1 && (
@@ -441,7 +491,7 @@ function LocationBar({ search }) {
           ))}
         </div>
       )}
-    </div>
+    </form>
   );
 }
 
@@ -758,6 +808,14 @@ function SourceGroup({ title, sources, local = false }) {
 
 function EmptyState({ text, compact = false }) {
   return <div className={`empty-state ${compact ? "compact" : ""}`}>{text}</div>;
+}
+
+// Codigos de GeolocationPositionError: 1 negado, 2 indisponivel, 3 tempo limite.
+function describeGeolocationError(error) {
+  if (error?.code === 1) return "Permissão de localização negada pelo navegador.";
+  if (error?.code === 2) return "Não foi possível obter sua localização agora.";
+  if (error?.code === 3) return "Tempo limite ao obter sua localização.";
+  return error?.message || "Falha ao usar sua localização.";
 }
 
 function getScreenTitle(id) {

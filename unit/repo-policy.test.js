@@ -73,7 +73,7 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(index, /%BASE_URL%icon\.svg/);
   assert.match(manifest, /"start_url": "\.\/"/);
   assert.match(manifest, /"scope": "\.\/"/);
-  assert.match(serviceWorker, /togs-heads-up-v8/);
+  assert.match(serviceWorker, /togs-heads-up-v9/);
   assert.match(serviceWorker, /application\/json/);
   assert.match(serviceWorker, /application\/xml/);
   assert.match(serviceWorker, /text\/xml/);
