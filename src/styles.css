@@ -112,6 +112,7 @@ input:focus-visible {
 }
 
 .topbar-actions,
+.location-bar,
 .location-search,
 .location-results {
   display: flex;
@@ -121,6 +122,34 @@ input:focus-visible {
 
 .topbar-actions {
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Busca de local vive na tela do Open-Meteo: e a unica que reage a troca. */
+.location-bar {
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.location-bar .location-search {
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
+}
+
+.location-bar .ghost-button {
+  color: var(--ink);
+  background: var(--surface-muted);
+  border-color: var(--border-strong);
+}
+
+.location-bar .location-results {
+  flex-basis: 100%;
+}
+
+.location-bar .location-results button {
+  color: #1d4ed8;
+  background: var(--blue-soft);
+  border-color: #bfdbfe;
 }
 
 .location-search {
@@ -351,7 +380,7 @@ input:focus-visible {
 }
 
 .overview-grid {
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .data-section {
@@ -376,7 +405,6 @@ input:focus-visible {
 }
 
 .section-title span,
-.plain-list p,
 .data-row small,
 .news-row small,
 .news-row p,
@@ -388,7 +416,6 @@ input:focus-visible {
 }
 
 .summary-list,
-.plain-list,
 .data-table,
 .news-list,
 .source-list {
@@ -441,14 +468,6 @@ input:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.plain-list {
-  gap: 12px;
-}
-
-.plain-list p {
-  margin: 0;
 }
 
 .weather-current {
@@ -695,12 +714,8 @@ input:focus-visible {
 
 @media (min-width: 900px) {
   .topbar {
-    grid-template-columns: minmax(0, 0.85fr) minmax(420px, 1fr);
-    align-items: start;
-  }
-
-  .location-results {
-    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
   }
 }
 

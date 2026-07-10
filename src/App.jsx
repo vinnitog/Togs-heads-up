@@ -72,11 +72,11 @@ const VIEW_GROUPS = [
       { id: "overview", label: "Resumo", icon: Activity },
       { id: "weather", label: "Open-Meteo", icon: CloudSun },
       { id: "cptec", label: "CPTEC/INPE", icon: CloudRain },
-      { id: "local", label: "Noticias locais", icon: Newspaper },
+      { id: "local", label: "Notícias locais", icon: Newspaper },
     ],
   },
   {
-    title: "Espaco",
+    title: "Espaço",
     items: [
       { id: "apod", label: "NASA APOD", icon: Aperture },
       { id: "neows", label: "NASA NeoWs", icon: Satellite },
@@ -98,7 +98,7 @@ const SOURCE_LABELS = {
   pendente: "Pendente",
   "sem-dados": "Sem dados",
   cache: "Cache",
-  indisponivel: "Indisponivel",
+  indisponivel: "Indisponível",
 };
 
 const INCIDENT_TYPE_LABELS = {
@@ -106,13 +106,13 @@ const INCIDENT_TYPE_LABELS = {
   policial: "Policial",
   risco: "Risco",
   rodovia: "Rodovia",
-  historico: "Historico",
+  historico: "Histórico",
 };
 
 function App() {
   const [activeView, setActiveView] = useState("overview");
   const [location, setLocation] = useState(DEFAULT_LOCATION);
-  const [locationQuery, setLocationQuery] = useState("Marilia-SP");
+  const [locationQuery, setLocationQuery] = useState("Marília-SP");
   const [locationResults, setLocationResults] = useState([]);
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD);
   const [localFeed, setLocalFeed] = useState(EMPTY_LOCAL_FEED);
@@ -143,11 +143,11 @@ function App() {
 
         if (signal?.aborted || requestId !== requestIdRef.current) return;
         setDashboard(result);
-        if (showNotice) setNotice("Dados de clima e espaco atualizados");
+        if (showNotice) setNotice("Dados de clima e espaço atualizados");
       } catch (error) {
         if (error?.name === "AbortError" || requestId !== requestIdRef.current) return;
-        setLoadError(error?.message || "Nao foi possivel consultar as APIs.");
-        if (showNotice) setNotice("Falha ao atualizar clima e espaco");
+        setLoadError(error?.message || "Não foi possível consultar as APIs.");
+        if (showNotice) setNotice("Falha ao atualizar clima e espaço");
       } finally {
         if (!signal?.aborted && requestId === requestIdRef.current) setIsLoading(false);
       }
@@ -169,11 +169,11 @@ function App() {
         ...result,
         incidents: sortIncidentsByRisk(result.incidents),
       });
-      if (showNotice) setNotice("Noticias locais atualizadas");
+      if (showNotice) setNotice("Notícias locais atualizadas");
     } catch (error) {
       if (error?.name === "AbortError" || requestId !== localRequestIdRef.current) return;
-      setLocalError(error?.message || "Nao foi possivel consultar as noticias locais.");
-      if (showNotice) setNotice("Falha ao atualizar noticias locais");
+      setLocalError(error?.message || "Não foi possível consultar as notícias locais.");
+      if (showNotice) setNotice("Falha ao atualizar notícias locais");
     } finally {
       if (!signal?.aborted && requestId === localRequestIdRef.current) setIsLocalLoading(false);
     }
@@ -235,7 +235,7 @@ function App() {
       if (results.length === 1) {
         selectLocation(results[0]);
       } else {
-        setNotice("Escolha uma das opcoes encontradas.");
+        setNotice("Escolha uma das opções encontradas.");
       }
     } catch (error) {
       setLoadError(error?.message || "Falha ao buscar local.");
@@ -253,9 +253,9 @@ function App() {
 
   function resetLocation() {
     setLocation(DEFAULT_LOCATION);
-    setLocationQuery("Marilia-SP");
+    setLocationQuery("Marília-SP");
     setLocationResults([]);
-    setNotice("Local: Marilia-SP");
+    setNotice("Local: Marília-SP");
   }
 
   function refreshAll() {
@@ -269,7 +269,7 @@ function App() {
         <div className="topbar-copy">
           <p className="eyebrow">Painel pessoal</p>
           <h1>Togs Heads-UP</h1>
-          <p>Clima, noticias de Marilia-SP e eventos espaciais reunidos em um so lugar, cada fonte com seu proprio espaco.</p>
+          <p>Clima, notícias de Marília-SP e eventos espaciais reunidos em um só lugar, cada fonte com seu próprio espaço.</p>
         </div>
 
         <div className="topbar-actions">
@@ -280,39 +280,10 @@ function App() {
             </span>
           )}
 
-          <form className="location-search" onSubmit={handleLocationSubmit}>
-            <Search size={18} />
-            <input
-              value={locationQuery}
-              onChange={(event) => setLocationQuery(event.target.value)}
-              placeholder="Buscar cidade ou local"
-              aria-label="Buscar cidade ou local"
-            />
-            <button type="submit" disabled={isSearching}>
-              {isSearching ? "Buscando" : "Buscar"}
-            </button>
-          </form>
-
-          <button className="ghost-button" type="button" onClick={resetLocation}>
-            <LocateFixed size={16} />
-            Marilia
-          </button>
-
           <button className="icon-button" type="button" onClick={refreshAll} aria-label="Atualizar painel">
             <RefreshCw size={18} className={isLoading || isLocalLoading ? "spin" : ""} />
           </button>
         </div>
-
-        {locationResults.length > 1 && (
-          <div className="location-results" aria-label="Resultados de localizacao">
-            {locationResults.slice(0, 5).map((result) => (
-              <button type="button" key={result.id} onClick={() => selectLocation(result)}>
-                <MapPin size={14} />
-                {buildLocationLabel(result)}
-              </button>
-            ))}
-          </div>
-        )}
       </header>
 
       <main className="workspace">
@@ -342,7 +313,21 @@ function App() {
           <ScreenHeading view={currentView} activeView={activeView} dashboard={dashboard} localFeed={localFeed} />
           <ScreenAlert state={getViewState(activeView, { dashboard, localFeed, loadError, localError, isLoading, isLocalLoading })} />
           {activeView === "overview" && <OverviewScreen dashboard={dashboard} localFeed={localFeed} />}
-          {activeView === "weather" && <WeatherScreen weather={dashboard.weather} location={location} />}
+          {activeView === "weather" && (
+            <WeatherScreen
+              weather={dashboard.weather}
+              location={location}
+              search={{
+                query: locationQuery,
+                results: locationResults,
+                isSearching,
+                onQueryChange: setLocationQuery,
+                onSubmit: handleLocationSubmit,
+                onSelect: selectLocation,
+                onReset: resetLocation,
+              }}
+            />
+          )}
           {activeView === "cptec" && <CptecScreen cptec={dashboard.cptec} location={location} />}
           {activeView === "local" && <LocalNewsScreen localFeed={localFeed} isLoading={isLocalLoading} />}
           {activeView === "apod" && <ApodScreen apod={dashboard.apod} />}
@@ -396,22 +381,13 @@ function OverviewScreen({ dashboard, localFeed }) {
   return (
     <div className="screen-grid overview-grid">
       <section className="data-section">
-        <h3>Leitura rapida</h3>
+        <h3>Leitura rápida</h3>
         <div className="summary-list">
           <SummaryLine icon={Thermometer} label="Open-Meteo" value={formatValue(current?.temperature, "C")} detail={current?.condition} />
           <SummaryLine icon={CloudRain} label="Chuva hoje" value={formatValue(today?.rainProbability, "%")} detail={`${formatValue(today?.precipitation, " mm")} previstos`} />
-          <SummaryLine icon={Newspaper} label="Noticias locais" value={formatInteger(localFeed.incidents.length)} detail={latestLocal?.title ?? "Sem item local no filtro atual"} />
+          <SummaryLine icon={Newspaper} label="Notícias locais" value={formatInteger(localFeed.incidents.length)} detail={latestLocal?.title ?? "Sem item local no filtro atual"} />
           <SummaryLine icon={Satellite} label="NeoWs 7 dias" value={formatInteger(neows?.count)} detail={`${formatInteger(neows?.hazardousCount)} potencialmente perigosos`} />
           <SummaryLine icon={Flame} label="Fireball" value={formatInteger(dashboard.fireballs.length)} detail="Registros recentes CNEOS" />
-        </div>
-      </section>
-
-      <section className="data-section">
-        <h3>Proximas acoes</h3>
-        <div className="plain-list">
-          <p>Use o menu para abrir uma fonte por vez.</p>
-          <p>Busque outra cidade no topo para atualizar Open-Meteo e CPTEC/INPE quando disponivel.</p>
-          <p>As noticias locais continuam focadas em Marilia-SP pelas fontes regionais antigas.</p>
         </div>
       </section>
     </div>
@@ -429,53 +405,103 @@ function SummaryLine({ icon: Icon, label, value, detail }) {
   );
 }
 
-function WeatherScreen({ weather, location }) {
+function LocationBar({ search }) {
+  return (
+    <div className="location-bar">
+      <form className="location-search" onSubmit={search.onSubmit}>
+        <Search size={18} />
+        <input
+          value={search.query}
+          onChange={(event) => search.onQueryChange(event.target.value)}
+          placeholder="Buscar cidade ou local"
+          aria-label="Buscar cidade ou local"
+        />
+        <button type="submit" disabled={search.isSearching}>
+          {search.isSearching ? "Buscando" : "Buscar"}
+        </button>
+      </form>
+
+      <button
+        className="ghost-button"
+        type="button"
+        onClick={search.onReset}
+        title="Voltar para o local padrão (Marília-SP)"
+      >
+        <LocateFixed size={16} />
+        Localização
+      </button>
+
+      {search.results.length > 1 && (
+        <div className="location-results" aria-label="Resultados de localização">
+          {search.results.slice(0, 5).map((result) => (
+            <button type="button" key={result.id} onClick={() => search.onSelect(result)}>
+              <MapPin size={14} />
+              {buildLocationLabel(result)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeatherScreen({ weather, location, search }) {
   const current = weather?.current;
   const data = weather?.hourly ?? [];
 
-  if (!current) return <EmptyState text="Open-Meteo ainda nao retornou dados para este local." />;
+  if (!current) {
+    return (
+      <>
+        <LocationBar search={search} />
+        <EmptyState text="Open-Meteo ainda não retornou dados para este local." />
+      </>
+    );
+  }
 
   return (
-    <div className="screen-grid">
-      <section className="data-section weather-focus">
-        <div className="weather-current">
-          <div className="weather-symbol">{current.isDay ? <Sun size={42} /> : <MoonStar size={42} />}</div>
-          <div>
-            <span>{buildLocationLabel(location)}</span>
-            <strong>{formatValue(current.temperature, "C")}</strong>
-            <small>{current.condition}</small>
+    <>
+      <LocationBar search={search} />
+      <div className="screen-grid">
+        <section className="data-section weather-focus">
+          <div className="weather-current">
+            <div className="weather-symbol">{current.isDay ? <Sun size={42} /> : <MoonStar size={42} />}</div>
+            <div>
+              <span>{buildLocationLabel(location)}</span>
+              <strong>{formatValue(current.temperature, "C")}</strong>
+              <small>{current.condition}</small>
+            </div>
           </div>
-        </div>
 
-        <div className="data-table compact">
-          <InfoRow icon={Thermometer} label="Sensacao" value={formatValue(current.apparentTemperature, "C")} />
-          <InfoRow icon={Droplets} label="Umidade" value={formatValue(current.humidity, "%")} />
-          <InfoRow icon={Wind} label="Vento" value={formatValue(current.windSpeed, " km/h")} />
-          <InfoRow icon={Zap} label="Rajadas" value={formatValue(current.windGusts, " km/h")} />
-          <InfoRow icon={Gauge} label="Pressao" value={formatValue(current.pressure, " hPa")} />
-          <InfoRow icon={CloudRain} label="Precipitacao agora" value={formatValue(current.precipitation, " mm")} />
-        </div>
-      </section>
+          <div className="data-table compact">
+            <InfoRow icon={Thermometer} label="Sensação" value={formatValue(current.apparentTemperature, "C")} />
+            <InfoRow icon={Droplets} label="Umidade" value={formatValue(current.humidity, "%")} />
+            <InfoRow icon={Wind} label="Vento" value={formatValue(current.windSpeed, " km/h")} />
+            <InfoRow icon={Zap} label="Rajadas" value={formatValue(current.windGusts, " km/h")} />
+            <InfoRow icon={Gauge} label="Pressão" value={formatValue(current.pressure, " hPa")} />
+            <InfoRow icon={CloudRain} label="Precipitação agora" value={formatValue(current.precipitation, " mm")} />
+          </div>
+        </section>
 
-      <section className="data-section chart-section">
-        <h3>Proximas 24h</h3>
-        {data.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#d7dee8" />
-              <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={12} />
-              <YAxis yAxisId="left" tickLine={false} axisLine={false} fontSize={12} width={32} />
-              <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} fontSize={12} width={32} />
-              <Tooltip />
-              <Area yAxisId="left" type="monotone" dataKey="temperature" name="Temp. C" stroke="#0f766e" fill="#ccfbf1" strokeWidth={2} />
-              <Area yAxisId="right" type="monotone" dataKey="rainProbability" name="Chuva %" stroke="#2563eb" fill="#dbeafe" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        ) : (
-          <EmptyState text="Grafico aguardando dados horarios." compact />
-        )}
-      </section>
-    </div>
+        <section className="data-section chart-section">
+          <h3>Próximas 24h</h3>
+          {data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={data}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#d7dee8" />
+                <XAxis dataKey="hour" tickLine={false} axisLine={false} fontSize={12} />
+                <YAxis yAxisId="left" tickLine={false} axisLine={false} fontSize={12} width={32} />
+                <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} fontSize={12} width={32} />
+                <Tooltip />
+                <Area yAxisId="left" type="monotone" dataKey="temperature" name="Temp. C" stroke="#0f766e" fill="#ccfbf1" strokeWidth={2} />
+                <Area yAxisId="right" type="monotone" dataKey="rainProbability" name="Chuva %" stroke="#2563eb" fill="#dbeafe" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState text="Gráfico aguardando dados horários." compact />
+          )}
+        </section>
+      </div>
+    </>
   );
 }
 
@@ -491,14 +517,14 @@ function InfoRow({ icon: Icon, label, value }) {
 
 function CptecScreen({ cptec, location }) {
   if (!cptec) {
-    return <EmptyState text={`CPTEC/INPE nao retornou previsao para ${buildLocationLabel(location)}.`} />;
+    return <EmptyState text={`CPTEC/INPE não retornou previsão para ${buildLocationLabel(location)}.`} />;
   }
 
   return (
     <section className="data-section">
       <div className="section-title">
-        <h3>{cptec.city ? `${cptec.city}-${cptec.uf}` : "Previsao nacional"}</h3>
-        <span>Atualizacao {cptec.updatedAt || "pendente"}</span>
+        <h3>{cptec.city ? `${cptec.city}-${cptec.uf}` : "Previsão nacional"}</h3>
+        <span>Atualização {cptec.updatedAt || "pendente"}</span>
       </div>
       <div className="data-table">
         {(cptec.days ?? []).map((day) => (
@@ -526,7 +552,7 @@ function LocalNewsScreen({ localFeed, isLoading }) {
       </div>
 
       {incidents.length === 0 ? (
-        <EmptyState text="As fontes locais responderam sem noticias/alertas filtrados para Marilia-SP." />
+        <EmptyState text="As fontes locais responderam sem notícias/alertas filtrados para Marília-SP." />
       ) : (
         <div className="news-list">
           {incidents.map((incident) => (
@@ -554,7 +580,7 @@ function LocalNewsScreen({ localFeed, isLoading }) {
 }
 
 function ApodScreen({ apod }) {
-  if (!apod) return <EmptyState text="APOD indisponivel no momento." />;
+  if (!apod) return <EmptyState text="APOD indisponível no momento." />;
 
   return (
     <section className="data-section apod-layout">
@@ -562,7 +588,7 @@ function ApodScreen({ apod }) {
       <div>
         <h3>{apod.title}</h3>
         <p>{formatDate(apod.date)}</p>
-        <p>{apod.explanation || "Sem descricao retornada pela NASA."}</p>
+        <p>{apod.explanation || "Sem descrição retornada pela NASA."}</p>
         {apod.url && (
           <a className="source-link" href={apod.url} target="_blank" rel="noreferrer">
             Abrir APOD <ExternalLink size={16} />
@@ -579,7 +605,7 @@ function NeoWsScreen({ neows }) {
   return (
     <section className="data-section">
       <div className="section-title">
-        <h3>Objetos proximos nos proximos 7 dias</h3>
+        <h3>Objetos próximos nos próximos 7 dias</h3>
         <span>{formatInteger(neows?.hazardousCount)} potencialmente perigosos</span>
       </div>
       {items.length === 0 ? (
@@ -608,10 +634,10 @@ function CadScreen({ cad }) {
     <section className="data-section">
       <div className="section-title">
         <h3>Close-Approach Data</h3>
-        <span>{cad.length} aproximacao(oes)</span>
+        <span>{cad.length} aproximação(ões)</span>
       </div>
       {cad.length === 0 ? (
-        <EmptyState text="JPL CAD sem aproximacoes no recorte atual." />
+        <EmptyState text="JPL CAD sem aproximações no recorte atual." />
       ) : (
         <div className="data-table">
           {cad.map((item) => (
@@ -680,7 +706,7 @@ function MarsScreen({ photos }) {
         <span>{photos.length} foto(s)</span>
       </div>
       {photos.length === 0 ? (
-        <EmptyState text="Mars Rover Photos indisponivel no momento." />
+        <EmptyState text="Mars Rover Photos indisponível no momento." />
       ) : (
         <div className="photo-grid">
           {photos.slice(0, 6).map((photo) => (
@@ -703,8 +729,8 @@ function MarsScreen({ photos }) {
 function SourcesScreen({ dashboard, localFeed }) {
   return (
     <div className="screen-grid">
-      <SourceGroup title="Clima e espaco" sources={dashboard.sources} />
-      <SourceGroup title="Noticias locais antigas" sources={localFeed.sources} local />
+      <SourceGroup title="Clima e espaço" sources={dashboard.sources} />
+      <SourceGroup title="Notícias locais antigas" sources={localFeed.sources} local />
     </div>
   );
 }
@@ -736,16 +762,16 @@ function EmptyState({ text, compact = false }) {
 
 function getScreenTitle(id) {
   const titles = {
-    overview: "Visao geral",
-    weather: "Clima atual e proximas 24h",
-    cptec: "Previsao nacional brasileira",
-    local: "Noticias e alertas regionais",
-    apod: "Imagem astronomica do dia",
-    neows: "Asteroides proximos",
-    cad: "Aproximacoes JPL",
+    overview: "Visão geral",
+    weather: "Clima atual e próximas 24h",
+    cptec: "Previsão nacional brasileira",
+    local: "Notícias e alertas regionais",
+    apod: "Imagem astronômica do dia",
+    neows: "Asteroides próximos",
+    cad: "Aproximações JPL",
     fireballs: "Meteoros e bolas de fogo",
     mars: "Fotos de Marte",
-    sources: "Estado das integracoes",
+    sources: "Estado das integrações",
   };
   return titles[id] ?? "Painel";
 }
@@ -764,7 +790,7 @@ function getViewState(activeView, ctx) {
   const { dashboard, localFeed, loadError, localError, isLoading, isLocalLoading } = ctx;
 
   if (activeView === "local") {
-    if (isLocalLoading) return { tone: "loading", message: "Atualizando noticias locais..." };
+    if (isLocalLoading) return { tone: "loading", message: "Atualizando notícias locais..." };
     if (localError) return { tone: "error", message: localError };
     if (localFeed.warnings.length > 0) return { tone: "warning", message: localFeed.warnings.slice(0, 2).join(" | ") };
     return null;
@@ -786,7 +812,7 @@ function getViewState(activeView, ctx) {
     return { tone: "warning", message: source.detail || `${source.label}: exibindo dados em cache` };
   }
   if (source?.state === "indisponivel") {
-    return { tone: "warning", message: source.detail || `${source.label}: indisponivel no navegador` };
+    return { tone: "warning", message: source.detail || `${source.label}: indisponível no navegador` };
   }
   if (source?.state === "sem-dados") {
     return { tone: "warning", message: source.detail || `${source.label}: sem dados no recorte atual` };
@@ -854,7 +880,7 @@ function formatDateTime(value) {
 }
 
 function formatCoordinates(item) {
-  if (!Number.isFinite(item.latitude) || !Number.isFinite(item.longitude)) return "Local nao informado";
+  if (!Number.isFinite(item.latitude) || !Number.isFinite(item.longitude)) return "Local não informado";
   return `${Math.abs(item.latitude).toFixed(1)}${item.latitude < 0 ? "S" : "N"}, ${Math.abs(item.longitude).toFixed(1)}${
     item.longitude < 0 ? "W" : "E"
   }`;

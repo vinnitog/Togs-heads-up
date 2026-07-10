@@ -38,10 +38,10 @@ test("thunderstorm is normalized as a high severity weather risk", () => {
   assert.equal(incident.type, "risco");
   assert.equal(incident.severity, "alta");
   assert.equal(incident.status, "ativo");
-  assert.equal(incident.location, "Marilia-SP");
+  assert.equal(incident.location, "Marília-SP");
   assert.equal(incident.source, OPEN_METEO_SOURCE.name);
   assert.match(incident.title, /Tempestade/);
-  assert.match(incident.detail, /Precipitacao 12\.4 mm/);
+  assert.match(incident.detail, /Precipitação 12\.4 mm/);
   assert.match(incident.detail, /Rajadas 70 km\/h/);
   assert.ok(incident.position.x >= 0 && incident.position.x <= 100);
 });
