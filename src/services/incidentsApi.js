@@ -608,7 +608,7 @@ export async function fetchIncidents({
   timeoutMs = DEFAULT_TIMEOUT_MS,
 } = {}) {
   if (typeof fetchImpl !== "function") {
-    throw new Error("Fetch API indisponivel neste ambiente.");
+    throw new Error("Fetch API indisponível neste ambiente.");
   }
 
   const configuredSources = getConfiguredSources(env).filter((source) => source.url);

@@ -115,6 +115,21 @@ test("CPTEC XML search and forecast are normalized", () => {
   assert.equal(forecast.days[0].uv, 5);
 });
 
+test("CPTEC forecast drops placeholder days and keeps empty numbers as null", () => {
+  const forecast = normalizeCptecForecastXml(`
+    <cidade>
+      <nome>Sao Paulo</nome><uf>SP</uf><atualizacao>2026-07-06</atualizacao>
+      <previsao><dia>2026-07-10</dia><tempo>pn</tempo><maxima>26</maxima><minima></minima><iuv></iuv></previsao>
+      <previsao><dia>null</dia><tempo></tempo><maxima></maxima><minima></minima><iuv></iuv></previsao>
+    </cidade>
+  `);
+
+  assert.equal(forecast.days.length, 1);
+  assert.equal(forecast.days[0].max, 26);
+  assert.equal(forecast.days[0].min, null);
+  assert.equal(forecast.days[0].uv, null);
+});
+
 test("NeoWs payload summarizes closest and hazardous asteroids", () => {
   const neows = normalizeNeoWsPayload({
     element_count: 2,
@@ -397,6 +412,34 @@ test("a source blocked by CORS falls back to the proxy", async () => {
   assert.equal(result.cptec.city, "Marilia");
   assert.equal(result.sources.find((source) => source.id === "cptec").state, "online");
   assert.ok(requestedUrls.some((url) => url.includes("allorigins")));
+});
+
+test("CPTEC XML served as ISO-8859-1 keeps its accents", async () => {
+  const latin1Xml = Buffer.from(
+    "<cidade><nome>São Paulo</nome><uf>SP</uf><previsao><dia>2026-07-10</dia><tempo>ci</tempo><maxima>26</maxima><minima>19</minima><iuv>0</iuv></previsao></cidade>",
+    "latin1",
+  );
+
+  const result = await fetchEarthSpaceDashboard({
+    location: { ...DEFAULT_LOCATION, cptecId: "455" },
+    fetchImpl: async (url) => {
+      if (url.includes("allorigins")) {
+        // O proxy repassa os bytes sem o charset original: sem decodificar como
+        // ISO-8859-1, "São" viraria "S�o".
+        return { ok: true, arrayBuffer: async () => latin1Xml };
+      }
+      if (url.includes("api.open-meteo.com")) {
+        return { ok: true, json: async () => ({ current: { weather_code: 0, temperature_2m: 24 }, daily: { time: [] }, hourly: { time: [] } }) };
+      }
+      if (url.includes("planetary/apod")) return { ok: true, json: async () => ({ title: "APOD", media_type: "image", url: "https://example.test/apod.jpg" }) };
+      if (url.includes("neo/rest")) return { ok: true, json: async () => ({ element_count: 0, near_earth_objects: {} }) };
+      if (url.includes("mars-photos")) return { ok: true, json: async () => ({ photos: [] }) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    },
+  });
+
+  assert.equal(result.cptec.city, "São Paulo");
+  assert.equal(result.cptec.days[0].condition, "Chuvas isoladas");
 });
 
 test("a per-request timeout does not discard the whole dashboard", async () => {

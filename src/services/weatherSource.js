@@ -19,7 +19,7 @@ const MARILIA_DEFAULT_POSITION = { x: 50, y: 50 };
 // Descricao curta por codigo WMO (apenas condicoes relevantes de alerta).
 const WMO_DESCRIPTIONS = {
   45: "Nevoeiro",
-  48: "Nevoeiro com deposito de gelo",
+  48: "Nevoeiro com depósito de gelo",
   51: "Garoa fraca",
   53: "Garoa moderada",
   55: "Garoa intensa",
@@ -75,7 +75,7 @@ export const OPEN_METEO_SOURCE = {
   url: buildOpenMeteoUrl(),
   parser: "openmeteo",
   detail:
-    "Condicao meteorologica observada/prevista para Marilia-SP via Open-Meteo (gratuita, sem chave, CORS). Gera alerta em chuva forte, tempestade ou vento intenso.",
+    "Condição meteorológica observada/prevista para Marília-SP via Open-Meteo (gratuita, sem chave, CORS). Gera alerta em chuva forte, tempestade ou vento intenso.",
 };
 
 function toFiniteNumber(value, fallback = 0) {
@@ -94,7 +94,7 @@ function describeWeather(code, precipitation, gusts) {
   if (base) return base;
   if (precipitation >= RAIN_MEDIA_MM) return "Chuva significativa";
   if (gusts >= MIN_GUST_KMH) return "Vento intenso";
-  return "Condicao meteorologica adversa";
+  return "Condição meteorológica adversa";
 }
 
 function classifySeverity(code, precipitation, gusts) {
@@ -129,7 +129,7 @@ export function normalizeOpenMeteoPayload(payload, source = OPEN_METEO_SOURCE) {
   const occurredAt = parseTimestamp(current.time);
 
   const detailParts = [];
-  if (precipitation > 0) detailParts.push(`Precipitacao ${precipitation.toFixed(1)} mm`);
+  if (precipitation > 0) detailParts.push(`Precipitação ${precipitation.toFixed(1)} mm`);
   if (gusts > 0) detailParts.push(`Rajadas ${Math.round(gusts)} km/h`);
   if (wind > 0) detailParts.push(`Vento ${Math.round(wind)} km/h`);
   if (Number.isFinite(temperature)) detailParts.push(`Temp. ${temperature.toFixed(1)} C`);
@@ -138,9 +138,9 @@ export function normalizeOpenMeteoPayload(payload, source = OPEN_METEO_SOURCE) {
     {
       id: `${source.id}-${occurredAt}`,
       type: "risco",
-      title: `${description} em Marilia-SP`,
-      location: "Marilia-SP",
-      neighborhood: "Marilia-SP",
+      title: `${description} em Marília-SP`,
+      location: "Marília-SP",
+      neighborhood: "Marília-SP",
       source: source.name,
       status: "ativo",
       severity,
@@ -161,7 +161,7 @@ export async function fetchWeatherIncidents({
   coords = MARILIA_COORDS,
 } = {}) {
   if (typeof fetchImpl !== "function") {
-    throw new Error("Fetch API indisponivel neste ambiente.");
+    throw new Error("Fetch API indisponível neste ambiente.");
   }
 
   const controller = new AbortController();

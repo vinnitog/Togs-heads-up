@@ -2,8 +2,8 @@ export const NASA_DEMO_KEY = "DEMO_KEY";
 
 export const DEFAULT_LOCATION = {
   id: "marilia-sp",
-  name: "Marilia",
-  admin1: "Sao Paulo",
+  name: "Marília",
+  admin1: "São Paulo",
   country: "Brasil",
   countryCode: "BR",
   latitude: -22.2171,
@@ -134,7 +134,7 @@ async function withRetry(fn, { retries = 1, baseDelayMs = 500, signal } = {}) {
 }
 
 const WMO_DESCRIPTIONS = {
-  0: "Ceu limpo",
+  0: "Céu limpo",
   1: "Poucas nuvens",
   2: "Parcialmente nublado",
   3: "Nublado",
@@ -158,43 +158,43 @@ const CPTEC_DESCRIPTIONS = {
   ec: "Encoberto com chuva isolada",
   ci: "Chuvas isoladas",
   c: "Chuva",
-  in: "Instavel",
+  in: "Instável",
   pp: "Possibilidade de pancadas",
-  cm: "Chuva pela manha",
-  cn: "Chuva a noite",
-  pt: "Pancadas a tarde",
-  pm: "Pancadas pela manha",
+  cm: "Chuva pela manhã",
+  cn: "Chuva à noite",
+  pt: "Pancadas à tarde",
+  pm: "Pancadas pela manhã",
   np: "Nublado com pancadas",
   pc: "Pancadas de chuva",
   pn: "Parcialmente nublado",
   cv: "Chuvisco",
   ch: "Chuvoso",
   t: "Tempestade",
-  ps: "Predominio de sol",
+  ps: "Predomínio de sol",
   e: "Encoberto",
   n: "Nublado",
-  cl: "Ceu claro",
+  cl: "Céu claro",
   nv: "Nevoeiro",
   g: "Geada",
   ne: "Neve",
-  nd: "Nao definido",
-  pnt: "Pancadas a noite",
+  nd: "Não definido",
+  pnt: "Pancadas à noite",
   psc: "Possibilidade de chuva",
-  pcm: "Possibilidade de chuva pela manha",
-  pct: "Possibilidade de chuva a tarde",
-  pcn: "Possibilidade de chuva a noite",
-  npt: "Nublado com pancadas a tarde",
-  npn: "Nublado com pancadas a noite",
-  ncn: "Nublado com chuva a noite",
-  nct: "Nublado com chuva a tarde",
-  ncm: "Nublado com chuva pela manha",
-  npm: "Nublado com pancadas pela manha",
+  pcm: "Possibilidade de chuva pela manhã",
+  pct: "Possibilidade de chuva à tarde",
+  pcn: "Possibilidade de chuva à noite",
+  npt: "Nublado com pancadas à tarde",
+  npn: "Nublado com pancadas à noite",
+  ncn: "Nublado com chuva à noite",
+  nct: "Nublado com chuva à tarde",
+  ncm: "Nublado com chuva pela manhã",
+  npm: "Nublado com pancadas pela manhã",
   npp: "Nublado com possibilidade de chuva",
-  vn: "Variacao de nebulosidade",
-  ct: "Chuva a tarde",
-  ppn: "Possibilidade de pancadas a noite",
-  ppt: "Possibilidade de pancadas a tarde",
-  ppm: "Possibilidade de pancadas pela manha",
+  vn: "Variação de nebulosidade",
+  ct: "Chuva à tarde",
+  ppn: "Possibilidade de pancadas à noite",
+  ppt: "Possibilidade de pancadas à tarde",
+  ppm: "Possibilidade de pancadas pela manhã",
 };
 
 const BRAZIL_STATE_CODES = {
@@ -351,18 +351,37 @@ async function fetchJson(url, options) {
   return JSON.parse(await response.text());
 }
 
+// O CPTEC serve XML em ISO-8859-1, mas o proxy de CORS costuma repassar o corpo
+// sem o charset original. Sem isso, response.text() decodifica como UTF-8 e os
+// acentos viram U+FFFD ("Sao Paulo" -> "S?o Paulo").
+function decodeXmlBytes(buffer) {
+  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  if (!utf8.includes("�")) return utf8;
+
+  try {
+    return new TextDecoder("iso-8859-1").decode(buffer);
+  } catch {
+    return utf8;
+  }
+}
+
 async function fetchText(url, options) {
   const response = await request(url, { ...options, accept: "application/xml,text/xml,text/plain" });
+
+  if (typeof response.arrayBuffer === "function" && typeof TextDecoder === "function") {
+    return decodeXmlBytes(await response.arrayBuffer());
+  }
+
   if (typeof response.text === "function") return response.text();
   return "";
 }
 
 function getWeatherDescription(code) {
-  return WMO_DESCRIPTIONS[Math.round(Number(code))] ?? "Condicao variavel";
+  return WMO_DESCRIPTIONS[Math.round(Number(code))] ?? "Condição variável";
 }
 
 function getCptecDescription(code) {
-  return CPTEC_DESCRIPTIONS[normalizeText(code).toLocaleLowerCase("pt-BR")] ?? "Previsao nacional";
+  return CPTEC_DESCRIPTIONS[normalizeText(code).toLocaleLowerCase("pt-BR")] ?? "Condição não informada";
 }
 
 function readIndexed(source, index, fallback = null) {
@@ -566,19 +585,31 @@ export function normalizeCptecCitySearchXml(xml) {
   }));
 }
 
+// Number("") e Number("null") nao servem aqui: o primeiro vira 0 (temperatura
+// falsa) e o segundo NaN. Campos vazios do CPTEC devem virar null.
+function readXmlNumber(block, tag) {
+  const raw = getXmlTag(block, tag);
+  return raw === "" || raw === "null" ? null : toFiniteNumber(raw);
+}
+
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
 export function normalizeCptecForecastXml(xml) {
   const cityBlock = String(xml);
-  const days = getXmlBlocks(xml, "previsao").map((block) => {
-    const code = getXmlTag(block, "tempo");
-    return {
-      date: getXmlTag(block, "dia"),
-      code,
-      condition: getCptecDescription(code),
-      max: toFiniteNumber(getXmlTag(block, "maxima")),
-      min: toFiniteNumber(getXmlTag(block, "minima")),
-      uv: toFiniteNumber(getXmlTag(block, "iuv")),
-    };
-  });
+  const days = getXmlBlocks(xml, "previsao")
+    .map((block) => {
+      const code = getXmlTag(block, "tempo");
+      return {
+        date: getXmlTag(block, "dia"),
+        code,
+        condition: getCptecDescription(code),
+        max: readXmlNumber(block, "maxima"),
+        min: readXmlNumber(block, "minima"),
+        uv: readXmlNumber(block, "iuv"),
+      };
+    })
+    // O CPTEC as vezes devolve um bloco final sem dia/tempo ("<dia>null</dia>").
+    .filter((day) => ISO_DATE_PATTERN.test(day.date));
 
   return {
     city: getXmlTag(cityBlock, "nome"),
@@ -712,7 +743,7 @@ async function fetchCptecForecastForLocation(location, options) {
 
 export async function searchLocations(query, { fetchImpl = globalThis.fetch, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (!normalizeText(query)) return [];
-  if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponivel neste ambiente.");
+  if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponível neste ambiente.");
 
   const payload = await fetchJson(buildGeocodingUrl(query), { fetchImpl, signal, timeoutMs });
   return normalizeGeocodingResults(payload);
@@ -728,7 +759,7 @@ export async function fetchEarthSpaceDashboard({
   storage = getDefaultStorage(),
   forceRefresh = false,
 } = {}) {
-  if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponivel neste ambiente.");
+  if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponível neste ambiente.");
 
   const apiKey = getNasaApiKey(env);
   const options = { fetchImpl, signal, timeoutMs, corsProxy: getCorsProxy(env) };
@@ -835,7 +866,7 @@ async function runDashboardTask(task, { storage, forceRefresh, signal }) {
         label: task.label,
         value: cached.value,
         state: "cache",
-        detail: `Sem atualizar (${message}); exibindo ultimo dado salvo`,
+        detail: `Sem atualizar (${message}); exibindo último dado salvo`,
         warning: `${task.label}: ${message} (usando cache)`,
       };
     }
@@ -848,7 +879,7 @@ async function runDashboardTask(task, { storage, forceRefresh, signal }) {
         label: task.label,
         value: emptyValueForTask(task.key),
         state: "indisponivel",
-        detail: "Indisponivel no navegador (fonte sem CORS); requer proxy ativo",
+        detail: "Indisponível no navegador (fonte sem CORS); requer proxy ativo",
         warning: null,
       };
     }
