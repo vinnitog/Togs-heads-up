@@ -131,17 +131,6 @@ input:focus-visible {
   margin-top: 16px;
 }
 
-.location-bar .location-search {
-  background: var(--surface-muted);
-  border-color: var(--border-strong);
-}
-
-.location-bar .ghost-button {
-  color: var(--ink);
-  background: var(--surface-muted);
-  border-color: var(--border-strong);
-}
-
 .location-bar .location-results {
   flex-basis: 100%;
 }
@@ -156,10 +145,10 @@ input:focus-visible {
   flex: 1 1 360px;
   max-width: 620px;
   min-height: 48px;
-  padding: 0 8px 0 12px;
+  padding: 0 12px;
   color: var(--ink);
-  background: #ffffff;
-  border: 1px solid transparent;
+  background: var(--surface-muted);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
 }
 
@@ -174,7 +163,7 @@ input:focus-visible {
   font-size: 1rem;
 }
 
-.location-search button,
+.search-button,
 .ghost-button,
 .icon-button,
 .api-menu button {
@@ -192,8 +181,8 @@ input:focus-visible {
     border-color 0.16s ease;
 }
 
-.location-search button {
-  padding: 0 14px;
+.search-button {
+  padding: 0 18px;
   color: #ffffff;
   background: var(--teal);
 }
@@ -204,13 +193,20 @@ input:focus-visible {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Geolocalizacao ativa: o botao vira um toggle visivelmente ligado. */
+.ghost-button.active {
+  color: #ccfbf1;
+  background: rgba(15, 118, 110, 0.55);
+  border-color: rgba(204, 251, 241, 0.4);
+}
+
 .icon-button {
   width: 44px;
   color: #f8fafc;
   background: rgba(255, 255, 255, 0.1);
 }
 
-.location-search button:hover,
+.search-button:hover,
 .ghost-button:hover,
 .icon-button:hover,
 .api-menu button:hover {
@@ -764,14 +760,15 @@ input:focus-visible {
     font-size: 1.65rem;
   }
 
-  .topbar-actions,
-  .location-search {
+  .topbar-actions {
     width: 100%;
+    justify-content: flex-start;
   }
 
   .location-search {
+    width: 100%;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .ghost-button {
@@ -823,14 +820,8 @@ input:focus-visible {
     font-size: 1.45rem;
   }
 
-  .location-search {
-    grid-template-columns: auto minmax(0, 1fr);
-    padding-bottom: 8px;
-  }
-
-  .location-search button {
-    grid-column: 1 / -1;
-    width: 100%;
+  .search-button {
+    flex: 1 1 auto;
   }
 
   .api-menu button {

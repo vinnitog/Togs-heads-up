@@ -20,7 +20,9 @@ import {
   normalizeJplCadPayload,
   normalizeMarsRoverPayload,
   normalizeNeoWsPayload,
+  normalizeReverseGeocodingResult,
   normalizeWeatherPayload,
+  resolveLocationFromCoords,
 } from "../src/services/earthSpaceApi.js";
 
 test("Open-Meteo URLs use coordinates and no API key", () => {
@@ -296,7 +298,7 @@ function makeStorage(initial = {}) {
   };
 }
 
-const WEATHER_CACHE_KEY = `togs-cache:v1:weather:${DEFAULT_LOCATION.latitude},${DEFAULT_LOCATION.longitude}`;
+const WEATHER_CACHE_KEY = `togs-cache:v2:weather:${DEFAULT_LOCATION.latitude},${DEFAULT_LOCATION.longitude}`;
 
 function baseDashboardFetch(overrides = {}, requestedUrls = []) {
   return async (url) => {
@@ -414,9 +416,48 @@ test("a source blocked by CORS falls back to the proxy", async () => {
   assert.ok(requestedUrls.some((url) => url.includes("allorigins")));
 });
 
+test("reverse geocoding names the coordinates from the browser", async () => {
+  const location = await resolveLocationFromCoords(
+    { latitude: -22.2171, longitude: -49.9501 },
+    {
+      fetchImpl: async (url) => {
+        assert.ok(url.includes("reverse-geocode-client"));
+        return {
+          ok: true,
+          json: async () => ({
+            city: "Marília",
+            principalSubdivision: "São Paulo",
+            countryName: "Brasil",
+            countryCode: "BR",
+          }),
+        };
+      },
+    },
+  );
+
+  assert.equal(location.name, "Marília");
+  assert.equal(location.countryCode, "BR");
+  assert.equal(location.latitude, -22.2171);
+});
+
+test("reverse geocoding degrades to the raw coordinates when it fails", async () => {
+  const location = await resolveLocationFromCoords(
+    { latitude: -10, longitude: -50 },
+    { fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) },
+  );
+
+  assert.equal(location.name, "Minha localização");
+  assert.equal(location.latitude, -10);
+});
+
+test("reverse geocoding without a city falls back to the locality", () => {
+  const location = normalizeReverseGeocodingResult({ locality: "Distrito Rural" }, { latitude: -1, longitude: -2 });
+  assert.equal(location.name, "Distrito Rural");
+});
+
 test("CPTEC XML served as ISO-8859-1 keeps its accents", async () => {
   const latin1Xml = Buffer.from(
-    "<cidade><nome>São Paulo</nome><uf>SP</uf><previsao><dia>2026-07-10</dia><tempo>ci</tempo><maxima>26</maxima><minima>19</minima><iuv>0</iuv></previsao></cidade>",
+    '<?xml version="1.0" encoding="ISO-8859-1"?><cidade><nome>São Paulo</nome><uf>SP</uf><previsao><dia>2026-07-10</dia><tempo>ci</tempo><maxima>26</maxima><minima>19</minima><iuv>0</iuv></previsao></cidade>',
     "latin1",
   );
 

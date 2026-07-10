@@ -23,7 +23,9 @@ const JPL_SSD_BASE_URL = "https://ssd-api.jpl.nasa.gov";
 // Cache local (localStorage) para evitar rate limit e falhas transitorias.
 // Cada fonte so vai a rede quando o cache "fresco" expira (TTL). Se a rede
 // falhar, exibimos o ultimo valor bom enquanto ele nao estiver muito velho.
-const CACHE_PREFIX = "togs-cache:v1:";
+// A versao do prefixo invalida caches antigos quando o formato ou o parsing
+// muda (ex.: XML do CPTEC salvo com acentos quebrados na v1).
+const CACHE_PREFIX = "togs-cache:v2:";
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 
@@ -351,18 +353,33 @@ async function fetchJson(url, options) {
   return JSON.parse(await response.text());
 }
 
-// O CPTEC serve XML em ISO-8859-1, mas o proxy de CORS costuma repassar o corpo
-// sem o charset original. Sem isso, response.text() decodifica como UTF-8 e os
-// acentos viram U+FFFD ("Sao Paulo" -> "S?o Paulo").
+function decodeWith(label, buffer) {
+  try {
+    return new TextDecoder(label).decode(buffer);
+  } catch {
+    return new TextDecoder("utf-8").decode(buffer);
+  }
+}
+
+// A declaracao do XML (<?xml ... encoding="ISO-8859-1"?>) e ASCII puro, entao
+// pode ser lida com qualquer decoder de byte unico antes de escolher o correto.
+function readDeclaredEncoding(buffer) {
+  const head = decodeWith("iso-8859-1", buffer.slice(0, 200));
+  const match = head.match(/<\?xml[^>]*encoding=["']([^"']+)["']/i);
+  return match ? match[1].toLocaleLowerCase("en-US") : "";
+}
+
+// O CPTEC serve XML em ISO-8859-1, mas o proxy de CORS nao repassa o charset
+// original. Sem isso, response.text() decodifica como UTF-8 e os acentos viram
+// U+FFFD ("Sao Paulo" -> "S?o Paulo").
 function decodeXmlBytes(buffer) {
-  const utf8 = new TextDecoder("utf-8").decode(buffer);
+  const declared = readDeclaredEncoding(buffer);
+  if (declared && !declared.startsWith("utf")) return decodeWith(declared, buffer);
+
+  const utf8 = decodeWith("utf-8", buffer);
   if (!utf8.includes("�")) return utf8;
 
-  try {
-    return new TextDecoder("iso-8859-1").decode(buffer);
-  } catch {
-    return utf8;
-  }
+  return decodeWith("iso-8859-1", buffer);
 }
 
 async function fetchText(url, options) {
@@ -467,6 +484,31 @@ export function buildGeocodingUrl(query) {
   });
 
   return `https://geocoding-api.open-meteo.com/v1/search?${params.toString()}`;
+}
+
+// Reverse geocoding publico, sem chave e com CORS liberado. Usado apenas para
+// dar nome as coordenadas devolvidas pelo navegador.
+export function buildReverseGeocodingUrl({ latitude, longitude }) {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    localityLanguage: "pt",
+  });
+
+  return `https://api.bigdatacloud.net/data/reverse-geocode-client?${params.toString()}`;
+}
+
+export function normalizeReverseGeocodingResult(payload, { latitude, longitude }) {
+  return {
+    id: `geo-${latitude},${longitude}`,
+    name: normalizeText(payload?.city || payload?.locality, "Minha localização"),
+    admin1: normalizeText(payload?.principalSubdivision),
+    country: normalizeText(payload?.countryName),
+    countryCode: normalizeText(payload?.countryCode),
+    latitude: toFiniteNumber(latitude, DEFAULT_LOCATION.latitude),
+    longitude: toFiniteNumber(longitude, DEFAULT_LOCATION.longitude),
+    timezone: "auto",
+  };
 }
 
 export function buildCptecCitySearchUrl(query) {
@@ -747,6 +789,23 @@ export async function searchLocations(query, { fetchImpl = globalThis.fetch, sig
 
   const payload = await fetchJson(buildGeocodingUrl(query), { fetchImpl, signal, timeoutMs });
   return normalizeGeocodingResults(payload);
+}
+
+export async function resolveLocationFromCoords(
+  coords,
+  { fetchImpl = globalThis.fetch, signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {},
+) {
+  if (typeof fetchImpl !== "function") throw new Error("Fetch API indisponível neste ambiente.");
+
+  try {
+    const payload = await fetchJson(buildReverseGeocodingUrl(coords), { fetchImpl, signal, timeoutMs });
+    return normalizeReverseGeocodingResult(payload, coords);
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    // Sem o nome do lugar o painel ainda funciona: as coordenadas bastam para o
+    // Open-Meteo. Só o CPTEC/INPE fica sem cidade para consultar.
+    return normalizeReverseGeocodingResult(null, coords);
+  }
 }
 
 export async function fetchEarthSpaceDashboard({
