@@ -107,6 +107,24 @@ export function sortIncidentsByRisk(incidents, now = new Date()) {
   });
 }
 
+export function sortIncidentsByOccurredAt(incidents) {
+  return incidents
+    .map((incident, index) => {
+      const occurredAt = incident?.occurredAt;
+      const timestamp = occurredAt === null || occurredAt === undefined || String(occurredAt).trim() === ""
+        ? Number.NaN
+        : new Date(occurredAt).getTime();
+
+      return { incident, index, timestamp };
+    })
+    .sort((a, b) => {
+      const aTime = Number.isNaN(a.timestamp) ? Number.NEGATIVE_INFINITY : a.timestamp;
+      const bTime = Number.isNaN(b.timestamp) ? Number.NEGATIVE_INFINITY : b.timestamp;
+      return bTime - aTime || a.index - b.index;
+    })
+    .map(({ incident }) => incident);
+}
+
 export function createIncidentSummary(incidents, now = new Date()) {
   const total = incidents.length;
   const active = incidents.filter((incident) => incident.status === "ativo").length;

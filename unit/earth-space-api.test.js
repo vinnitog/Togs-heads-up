@@ -10,6 +10,7 @@ import {
   buildMarsRoverPhotosUrl,
   buildNeoWsUrl,
   buildOpenMeteoForecastUrl,
+  buildTranslationUrl,
   fetchEarthSpaceDashboard,
   getNasaApiKey,
   normalizeApodPayload,
@@ -23,6 +24,8 @@ import {
   normalizeReverseGeocodingResult,
   normalizeWeatherPayload,
   resolveLocationFromCoords,
+  translateApodToPtBr,
+  translateTextToPtBr,
 } from "../src/services/earthSpaceApi.js";
 
 test("Open-Meteo URLs use coordinates and no API key", () => {
@@ -222,7 +225,126 @@ test("APOD and Mars rover payloads handle media variants safely", () => {
   assert.equal(video.mediaType, "video");
   assert.equal(latestPhoto.id, "99");
   assert.match(latestPhoto.imageUrl, /^https:\/\//);
-  assert.equal(latestPhoto.camera, "Front Hazard Avoidance Camera");
+  assert.equal(latestPhoto.camera, "Câmera frontal de prevenção de riscos");
+});
+
+test("APOD title and explanation are translated to pt-BR with safe fallback", async () => {
+  const apod = normalizeApodPayload({
+    title: "Star birth",
+    explanation: "A bright nebula contains young stars.",
+    media_type: "image",
+  });
+  const translations = new Map([
+    ["Star birth", "Nascimento de estrelas"],
+    ["A bright nebula contains young stars.", "Uma nebulosa brilhante contém estrelas jovens."],
+  ]);
+
+  const translated = await translateApodToPtBr(apod, {
+    fetchImpl: async (url) => {
+      const sourceText = new URL(url).searchParams.get("q");
+      return {
+        ok: true,
+        json: async () => ({ responseData: { translatedText: translations.get(sourceText) } }),
+      };
+    },
+  });
+
+  assert.match(buildTranslationUrl("Star birth"), /langpair=en%7Cpt-BR/);
+  assert.equal(translated.title, "Nascimento de estrelas");
+  assert.equal(translated.explanation, "Uma nebulosa brilhante contém estrelas jovens.");
+  assert.equal(translated.translationStatus, "translated");
+
+  const fallback = await translateApodToPtBr(apod, {
+    fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }),
+  });
+  assert.equal(fallback.title, "Star birth");
+  assert.equal(fallback.translationStatus, "original");
+});
+
+test("APOD reports partial translation and decodes HTML entities", async () => {
+  const apod = normalizeApodPayload({
+    title: "Stars and dust",
+    explanation: "The original explanation remains available.",
+    media_type: "image",
+  });
+
+  const translated = await translateApodToPtBr(apod, {
+    fetchImpl: async (url) => {
+      const sourceText = new URL(url).searchParams.get("q");
+      if (sourceText === "Stars and dust") {
+        return {
+          ok: true,
+          json: async () => ({
+            responseStatus: "200",
+            responseData: { translatedText: "Estrelas &amp; poeira &quot;cósmica&quot;" },
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          responseStatus: 429,
+          responseDetails: "LIMIT EXCEEDED",
+          responseData: { translatedText: "LIMIT EXCEEDED" },
+        }),
+      };
+    },
+  });
+
+  assert.equal(translated.title, 'Estrelas & poeira "cósmica"');
+  assert.equal(translated.explanation, apod.explanation);
+  assert.equal(translated.translationStatus, "partial");
+});
+
+test("empty translation responses preserve the original APOD content", async () => {
+  const apod = normalizeApodPayload({
+    title: "Star birth",
+    explanation: "Young stars.",
+    media_type: "image",
+  });
+
+  const result = await translateApodToPtBr(apod, {
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({ responseStatus: 200, responseData: { translatedText: "" } }),
+    }),
+  });
+
+  assert.equal(result.title, apod.title);
+  assert.equal(result.explanation, apod.explanation);
+  assert.equal(result.translationStatus, "original");
+});
+
+test("translation chunks respect the MyMemory UTF-8 byte limit and reject API-level errors", async () => {
+  const requestedChunks = [];
+  const multibyteText = "é".repeat(260);
+  const translated = await translateTextToPtBr(multibyteText, {
+    fetchImpl: async (url) => {
+      const chunk = new URL(url).searchParams.get("q");
+      requestedChunks.push(chunk);
+      return {
+        ok: true,
+        json: async () => ({ responseStatus: 200, responseData: { translatedText: chunk } }),
+      };
+    },
+  });
+
+  assert.equal(translated, multibyteText);
+  assert.ok(requestedChunks.length > 1);
+  assert.ok(requestedChunks.every((chunk) => Buffer.byteLength(chunk, "utf8") <= 450));
+
+  const fallback = await translateTextToPtBr("Star birth", {
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        responseStatus: 429,
+        responseDetails: "LIMIT EXCEEDED",
+        responseData: { translatedText: "LIMIT EXCEEDED" },
+      }),
+    }),
+  });
+  assert.equal(fallback, "Star birth");
 });
 
 test("fireball payload converts coordinates by hemisphere", () => {
@@ -298,7 +420,8 @@ function makeStorage(initial = {}) {
   };
 }
 
-const WEATHER_CACHE_KEY = `togs-cache:v2:weather:${DEFAULT_LOCATION.latitude},${DEFAULT_LOCATION.longitude}`;
+const WEATHER_CACHE_KEY = `togs-cache:v3:weather:${DEFAULT_LOCATION.latitude},${DEFAULT_LOCATION.longitude}`;
+const APOD_CACHE_KEY = "togs-cache:v3:apod:global";
 
 function baseDashboardFetch(overrides = {}, requestedUrls = []) {
   return async (url) => {
@@ -362,6 +485,143 @@ test("forceRefresh bypasses a fresh cache", async () => {
 
   assert.equal(result.weather.current.temperature, 30);
   assert.ok(requestedUrls.some((url) => url.includes("api.open-meteo.com")));
+});
+
+test("an original APOD cache is retried after 15 minutes and promoted to translated", async () => {
+  const storage = makeStorage({
+    [APOD_CACHE_KEY]: JSON.stringify({
+      storedAt: Date.now() - 20 * 60 * 1000,
+      value: {
+        title: "Star birth",
+        explanation: "Young stars.",
+        mediaType: "image",
+        translationStatus: "original",
+      },
+    }),
+  });
+  const requestedUrls = [];
+  const fetchImpl = baseDashboardFetch({}, requestedUrls);
+
+  const result = await fetchEarthSpaceDashboard({
+    storage,
+    fetchImpl: async (url, options) => {
+      if (url.includes("api.mymemory.translated.net")) {
+        requestedUrls.push(url);
+        const chunk = new URL(url).searchParams.get("q");
+        return {
+          ok: true,
+          json: async () => ({ responseStatus: 200, responseData: { translatedText: `Traduzido: ${chunk}` } }),
+        };
+      }
+      return fetchImpl(url, options);
+    },
+  });
+
+  assert.ok(requestedUrls.some((url) => url.includes("planetary/apod")));
+  assert.ok(requestedUrls.some((url) => url.includes("api.mymemory.translated.net")));
+  assert.equal(result.apod.title, "Traduzido: APOD");
+  assert.equal(result.apod.translationStatus, "translated");
+
+  const cached = JSON.parse(storage.getItem(APOD_CACHE_KEY));
+  assert.equal(cached.value.translationStatus, "translated");
+  assert.equal(cached.value.title, "Traduzido: APOD");
+
+  const secondRequestUrls = [];
+  await fetchEarthSpaceDashboard({ storage, fetchImpl: baseDashboardFetch({}, secondRequestUrls) });
+  assert.ok(!secondRequestUrls.some((url) => url.includes("planetary/apod")));
+  assert.ok(!secondRequestUrls.some((url) => url.includes("api.mymemory.translated.net")));
+});
+
+test("an original APOD cache younger than 15 minutes does not retry translation", async () => {
+  const storage = makeStorage({
+    [APOD_CACHE_KEY]: JSON.stringify({
+      storedAt: Date.now() - 14 * 60 * 1000,
+      value: {
+        title: "Star birth",
+        explanation: "Young stars.",
+        mediaType: "image",
+        translationStatus: "original",
+      },
+    }),
+  });
+  const requestedUrls = [];
+
+  const result = await fetchEarthSpaceDashboard({
+    storage,
+    fetchImpl: baseDashboardFetch({}, requestedUrls),
+  });
+
+  assert.equal(result.apod.translationStatus, "original");
+  assert.ok(!requestedUrls.some((url) => url.includes("planetary/apod")));
+  assert.ok(!requestedUrls.some((url) => url.includes("api.mymemory.translated.net")));
+});
+
+test("translation timeout falls back to original APOD without losing other dashboard data", async () => {
+  const fetchImpl = baseDashboardFetch();
+
+  const result = await fetchEarthSpaceDashboard({
+    timeoutMs: 15,
+    fetchImpl: async (url, options) => {
+      if (!url.includes("api.mymemory.translated.net")) return fetchImpl(url, options);
+
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener(
+          "abort",
+          () => {
+            const error = new Error("aborted by timeout");
+            error.name = "AbortError";
+            reject(error);
+          },
+          { once: true },
+        );
+      });
+    },
+  });
+
+  assert.equal(result.weather.current.temperature, 24);
+  assert.equal(result.apod.title, "APOD");
+  assert.equal(result.apod.translationStatus, "original");
+  assert.equal(result.sources.find((source) => source.id === "apod").state, "online");
+});
+
+test("aborting the dashboard during APOD translation rejects and does not cache APOD", async () => {
+  const storage = makeStorage();
+  const controller = new AbortController();
+  const fetchImpl = baseDashboardFetch();
+  let translationCalls = 0;
+
+  controller.abort();
+
+  await assert.rejects(
+    fetchEarthSpaceDashboard({
+      storage,
+      signal: controller.signal,
+      fetchImpl: async (url, options) => {
+        if (url.includes("planetary/apod")) {
+          return {
+            ok: true,
+            json: async () => ({
+              title: "APOD",
+              explanation: "Original explanation.",
+              media_type: "image",
+              url: "https://example.test/apod.jpg",
+            }),
+          };
+        }
+        if (!url.includes("api.mymemory.translated.net")) return fetchImpl(url, options);
+
+        translationCalls += 1;
+        assert.equal(options.signal.aborted, true);
+        const error = new Error("aborted by caller");
+        error.name = "AbortError";
+        throw error;
+      },
+    }),
+    { name: "AbortError" },
+  );
+
+  assert.equal(translationCalls, 2);
+  assert.equal(storage.getItem(APOD_CACHE_KEY), null);
 });
 
 test("transient network failure is retried before giving up", async () => {
@@ -536,7 +796,7 @@ test("a proxy-dependent source degrades to 'indisponivel', not a hard error", as
   assert.equal(cad.state, "indisponivel");
   assert.deepEqual(result.cad, []);
   // Nao polui os warnings (degradacao suave, nao alarme).
-  assert.ok(!result.warnings.some((warning) => warning.includes("Close-Approach")));
+  assert.ok(!result.warnings.some((warning) => warning.includes("Aproximações")));
 });
 
 test("fetchEarthSpaceDashboard keeps useful data when one space source fails", async () => {

@@ -19,13 +19,17 @@ const PROXY_TIMEOUT_MS = 8000;
 const CPTEC_BASE_URL = "https://servicos.cptec.inpe.br/XML";
 const NASA_API_BASE_URL = "https://api.nasa.gov";
 const JPL_SSD_BASE_URL = "https://ssd-api.jpl.nasa.gov";
+const TRANSLATION_API_BASE_URL = "https://api.mymemory.translated.net/get";
+// A MyMemory limita `q` por bytes UTF-8, nao por quantidade de caracteres.
+const TRANSLATION_CHUNK_SIZE_BYTES = 450;
+const APOD_UNTRANSLATED_CACHE_TTL_MS = 15 * 60 * 1000;
 
 // Cache local (localStorage) para evitar rate limit e falhas transitorias.
 // Cada fonte so vai a rede quando o cache "fresco" expira (TTL). Se a rede
 // falhar, exibimos o ultimo valor bom enquanto ele nao estiver muito velho.
 // A versao do prefixo invalida caches antigos quando o formato ou o parsing
 // muda (ex.: XML do CPTEC salvo com acentos quebrados na v1).
-const CACHE_PREFIX = "togs-cache:v2:";
+const CACHE_PREFIX = "togs-cache:v3:";
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
 
@@ -227,6 +231,20 @@ const BRAZIL_STATE_CODES = {
   "sao paulo": "SP",
   sergipe: "SE",
   tocantins: "TO",
+};
+
+const MARS_CAMERA_LABELS = {
+  FHAZ: "Câmera frontal de prevenção de riscos",
+  "FRONT HAZARD AVOIDANCE CAMERA": "Câmera frontal de prevenção de riscos",
+  RHAZ: "Câmera traseira de prevenção de riscos",
+  "REAR HAZARD AVOIDANCE CAMERA": "Câmera traseira de prevenção de riscos",
+  MAST: "Câmera do mastro",
+  CHEMCAM: "Complexo de química e câmera",
+  MAHLI: "Imageador de lente de mão de Marte",
+  MARDI: "Imageador de descida de Marte",
+  NAVCAM: "Câmera de navegação",
+  PANCAM: "Câmera panorâmica",
+  MINITES: "Espectrômetro de emissão térmica em miniatura",
 };
 
 function readViteEnv() {
@@ -524,6 +542,86 @@ export function buildApodUrl(apiKey = NASA_DEMO_KEY) {
   return `${NASA_API_BASE_URL}/planetary/apod?${params.toString()}`;
 }
 
+export function buildTranslationUrl(text) {
+  const params = new URLSearchParams({ q: normalizeText(text), langpair: "en|pt-BR" });
+  return `${TRANSLATION_API_BASE_URL}?${params.toString()}`;
+}
+
+function splitTextForTranslation(text) {
+  const chunks = [];
+  const encoder = new TextEncoder();
+  let remaining = normalizeText(text);
+
+  while (encoder.encode(remaining).length > TRANSLATION_CHUNK_SIZE_BYTES) {
+    let chunkBytes = 0;
+    let maxChunk = "";
+
+    for (const character of remaining) {
+      const characterBytes = encoder.encode(character).length;
+      if (chunkBytes + characterBytes > TRANSLATION_CHUNK_SIZE_BYTES) break;
+      maxChunk += character;
+      chunkBytes += characterBytes;
+    }
+
+    const sentenceBreak = maxChunk.lastIndexOf(". ");
+    const wordBreak = maxChunk.lastIndexOf(" ");
+    const splitAt = sentenceBreak >= maxChunk.length / 2 ? sentenceBreak + 1 : wordBreak;
+    const safeSplitAt = splitAt > 0 ? splitAt : maxChunk.length;
+    chunks.push({ text: remaining.slice(0, safeSplitAt).trim(), separator: splitAt > 0 ? " " : "" });
+    remaining = remaining.slice(safeSplitAt).trim();
+  }
+
+  if (remaining) chunks.push({ text: remaining, separator: "" });
+  return chunks;
+}
+
+function decodeTranslationText(text) {
+  return normalizeText(text)
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">");
+}
+
+async function requestPtBrTranslation(text, options = {}) {
+  const sourceText = normalizeText(text);
+  if (!sourceText) return { text: sourceText, translated: true };
+
+  try {
+    const translationOptions = {
+      ...options,
+      fetchImpl: options.fetchImpl ?? globalThis.fetch,
+      corsProxy: "",
+      timeoutMs: Math.min(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, 6000),
+    };
+    const translatedChunks = await Promise.all(
+      splitTextForTranslation(sourceText).map(async ({ text: chunk, separator }) => {
+        const payload = await fetchJson(buildTranslationUrl(chunk), translationOptions);
+        const responseStatus = Number(payload?.responseStatus);
+        if (Number.isFinite(responseStatus) && (responseStatus < 200 || responseStatus >= 300)) {
+          throw new Error(normalizeText(payload?.responseDetails, `HTTP ${responseStatus}`));
+        }
+        const translated = decodeTranslationText(payload?.responseData?.translatedText);
+        if (!translated) throw new Error("tradução vazia");
+        return { text: translated, separator };
+      }),
+    );
+
+    return {
+      text: translatedChunks.map((chunk) => `${chunk.text}${chunk.separator}`).join("").trim(),
+      translated: true,
+    };
+  } catch (error) {
+    if (options.signal?.aborted) throw error;
+    return { text: sourceText, translated: false };
+  }
+}
+
+export async function translateTextToPtBr(text, options = {}) {
+  return (await requestPtBrTranslation(text, options)).text;
+}
+
 export function buildNeoWsUrl(apiKey = NASA_DEMO_KEY, now = new Date()) {
   const params = new URLSearchParams({
     start_date: dateToParam(now),
@@ -675,6 +773,29 @@ export function normalizeApodPayload(payload) {
   };
 }
 
+export async function translateApodToPtBr(apod, options = {}) {
+  if (!apod) return null;
+
+  const [title, explanation] = await Promise.all([
+    requestPtBrTranslation(apod.title, options),
+    requestPtBrTranslation(apod.explanation, options),
+  ]);
+  const translatedParts = [title, explanation].filter((part) => part.text);
+  const translatedCount = translatedParts.filter((part) => part.translated).length;
+
+  return {
+    ...apod,
+    title: title.text,
+    explanation: explanation.text,
+    translationStatus:
+      translatedCount === translatedParts.length
+        ? "translated"
+        : translatedCount > 0
+          ? "partial"
+          : "original",
+  };
+}
+
 export function normalizeNeoWsPayload(payload) {
   const byDate = payload?.near_earth_objects ?? {};
   const items = Object.entries(byDate).flatMap(([date, objects]) =>
@@ -751,7 +872,9 @@ export function normalizeMarsRoverPayload(payload) {
   return (Array.isArray(photos) ? photos : []).slice(0, 6).map((photo) => ({
     id: String(photo.id ?? photo.img_src),
     rover: normalizeText(photo.rover?.name, "Curiosity"),
-    camera: normalizeText(photo.camera?.full_name || photo.camera?.name, "Camera"),
+    camera:
+      MARS_CAMERA_LABELS[normalizeText(photo.camera?.name || photo.camera?.full_name).toUpperCase()] ||
+      normalizeText(photo.camera?.full_name || photo.camera?.name, "Câmera"),
     earthDate: normalizeText(photo.earth_date),
     sol: toFiniteNumber(photo.sol),
     imageUrl: normalizeText(photo.img_src).replace(/^http:\/\//i, "https://"),
@@ -840,7 +963,10 @@ export async function fetchEarthSpaceDashboard({
     {
       key: "apod",
       label: "NASA APOD",
-      run: async () => normalizeApodPayload(await fetchJson(buildApodUrl(apiKey), options)),
+      run: async () => {
+        const apod = normalizeApodPayload(await fetchJson(buildApodUrl(apiKey), options));
+        return translateApodToPtBr(apod, options);
+      },
     },
     {
       key: "neows",
@@ -849,19 +975,19 @@ export async function fetchEarthSpaceDashboard({
     },
     {
       key: "cad",
-      label: "NASA/JPL Close-Approach",
+      label: "Aproximações — NASA/JPL",
       proxyDependent: true,
       run: async () => normalizeJplCadPayload(await fetchJson(buildJplCloseApproachUrl(), options)),
     },
     {
       key: "fireballs",
-      label: "NASA/JPL Fireball",
+      label: "Bolas de fogo — NASA/JPL",
       proxyDependent: true,
       run: async () => normalizeFireballPayload(await fetchJson(buildFireballUrl(), options)),
     },
     {
       key: "marsPhotos",
-      label: "NASA Mars Rover Photos",
+      label: "Fotos de Marte — NASA",
       run: async () => normalizeMarsRoverPayload(await fetchJson(buildMarsRoverPhotosUrl(apiKey), options)),
     },
   ];
@@ -898,7 +1024,10 @@ function emptyValueForTask(key) {
 async function runDashboardTask(task, { storage, forceRefresh, signal }) {
   const cacheKey = `${task.key}:${task.scope ?? "global"}`;
   const cached = readCacheEntry(storage, cacheKey);
-  const ttl = CACHE_TTL_MS[task.key] ?? 0;
+  const ttl =
+    task.key === "apod" && cached?.value?.translationStatus && cached.value.translationStatus !== "translated"
+      ? APOD_UNTRANSLATED_CACHE_TTL_MS
+      : CACHE_TTL_MS[task.key] ?? 0;
   const ageMs = cached ? Date.now() - cached.storedAt : Infinity;
 
   // Cache fresco: nao vai a rede (principal defesa contra rate limit).

@@ -8,6 +8,7 @@ import {
   getHotspots,
   getIncidentAgeMinutes,
   getRiskBand,
+  sortIncidentsByOccurredAt,
   sortIncidentsByRisk,
 } from "../src/utils/incidents.js";
 
@@ -59,6 +60,56 @@ test("risk score prioritizes recent high severity active incidents", () => {
 
   const sorted = sortIncidentsByRisk(incidents, now);
   assert.equal(sorted[0].id, "a");
+});
+
+test("local news is ordered only by occurredAt from newest to oldest", () => {
+  const mixedIncidents = [
+    { id: "old-critical", occurredAt: "2026-06-26T10:00:00-03:00", severity: "alta", source: "A" },
+    { id: "new-low", occurredAt: "2026-06-26T14:00:00-03:00", severity: "baixa", source: "B" },
+    { id: "middle", occurredAt: "2026-06-26T12:00:00-03:00", severity: "media", source: "C" },
+    { id: "invalid", occurredAt: "sem-data", severity: "alta", source: "D" },
+  ];
+
+  const sorted = sortIncidentsByOccurredAt(mixedIncidents);
+
+  assert.deepEqual(sorted.map((incident) => incident.id), ["new-low", "middle", "old-critical", "invalid"]);
+  assert.notEqual(sorted, mixedIncidents);
+});
+
+test("local news ordering uses absolute instants across timezones and day rollover", () => {
+  const mixedTimezones = [
+    { id: "previous-day", occurredAt: "2026-06-26T23:55:00-03:00" },
+    { id: "later-clock-older-instant", occurredAt: "2026-06-27T04:00:00+02:00" },
+    { id: "newest", occurredAt: "2026-06-27T00:10:00-03:00" },
+  ];
+
+  const sorted = sortIncidentsByOccurredAt(mixedTimezones);
+
+  assert.deepEqual(sorted.map((incident) => incident.id), [
+    "newest",
+    "previous-day",
+    "later-clock-older-instant",
+  ]);
+});
+
+test("local news ordering is stable for ties and keeps absent dates at the end", () => {
+  const tiedAndMissing = [
+    { id: "tie-first", occurredAt: "2026-06-27T03:00:00Z" },
+    { id: "missing-first" },
+    { id: "tie-second", occurredAt: "2026-06-27T00:00:00-03:00" },
+    { id: "missing-null", occurredAt: null },
+    { id: "missing-blank", occurredAt: "" },
+  ];
+
+  const sorted = sortIncidentsByOccurredAt(tiedAndMissing);
+
+  assert.deepEqual(sorted.map((incident) => incident.id), [
+    "tie-first",
+    "tie-second",
+    "missing-first",
+    "missing-null",
+    "missing-blank",
+  ]);
 });
 
 test("filters incidents by type status severity and query", () => {

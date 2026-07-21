@@ -166,6 +166,7 @@ input:focus-visible {
 .search-button,
 .ghost-button,
 .icon-button,
+.menu-toggle,
 .api-menu button {
   display: inline-flex;
   align-items: center;
@@ -209,6 +210,7 @@ input:focus-visible {
 .search-button:hover,
 .ghost-button:hover,
 .icon-button:hover,
+.menu-toggle:hover,
 .api-menu button:hover {
   transform: translateY(-1px);
 }
@@ -294,6 +296,10 @@ input:focus-visible {
   align-items: start;
 }
 
+.menu-toggle {
+  display: none;
+}
+
 .api-menu,
 .screen-shell,
 .data-section {
@@ -327,7 +333,8 @@ input:focus-visible {
 .api-menu button {
   justify-content: flex-start;
   width: 100%;
-  min-height: 42px;
+  /* [UI] Alvo de interacao seguro tanto para mouse quanto para toque. */
+  min-height: 44px;
   padding: 0 12px;
   color: #344054;
   background: transparent;
@@ -537,6 +544,13 @@ input:focus-visible {
   line-height: 1.6;
 }
 
+.translation-note {
+  display: block;
+  margin: 10px 0;
+  color: #92400e;
+  line-height: 1.5;
+}
+
 .source-link {
   display: inline-flex;
   align-items: center;
@@ -723,8 +737,32 @@ input:focus-visible {
     grid-template-columns: 1fr;
   }
 
+  .menu-toggle {
+    display: inline-flex;
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 14px;
+    color: var(--ink);
+    background: var(--surface);
+    border-color: var(--border);
+    box-shadow: var(--shadow);
+  }
+
+  /* [UI] O estado expandido precisa ser percebido alem da troca de icone/texto. */
+  .menu-toggle.open {
+    color: #1d4ed8;
+    background: var(--blue-soft);
+    border-color: #93c5fd;
+  }
+
   .api-menu {
+    display: none;
     position: static;
+  }
+
+  .api-menu.open {
+    display: grid;
   }
 
   .menu-group {
@@ -750,6 +788,10 @@ input:focus-visible {
   .data-section,
   .api-menu {
     padding: 14px;
+  }
+
+  .api-menu button {
+    min-height: 48px;
   }
 
   .screen-shell {
@@ -829,7 +871,7 @@ input:focus-visible {
   }
 
   .menu-group {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
   }
 
   .weather-current strong {

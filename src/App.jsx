@@ -12,6 +12,7 @@ import {
   Globe2,
   LocateFixed,
   MapPin,
+  Menu,
   MoonStar,
   Newspaper,
   RefreshCw,
@@ -23,6 +24,7 @@ import {
   Thermometer,
   WifiOff,
   Wind,
+  X,
   Zap,
 } from "lucide-react";
 import {
@@ -44,7 +46,7 @@ import {
   searchLocations,
 } from "./services/earthSpaceApi.js";
 import { fetchIncidents } from "./services/incidentsApi.js";
-import { formatAge, getIncidentAgeMinutes, sortIncidentsByRisk } from "./utils/incidents.js";
+import { formatAge, getIncidentAgeMinutes, sortIncidentsByOccurredAt } from "./utils/incidents.js";
 
 const EMPTY_DASHBOARD = {
   weather: null,
@@ -82,7 +84,7 @@ const VIEW_GROUPS = [
       { id: "apod", label: "NASA APOD", icon: Aperture },
       { id: "neows", label: "NASA NeoWs", icon: Satellite },
       { id: "cad", label: "JPL CAD", icon: Telescope },
-      { id: "fireballs", label: "Fireball", icon: Flame },
+      { id: "fireballs", label: "Bolas de fogo", icon: Flame },
       { id: "mars", label: "Marte", icon: Rocket },
     ],
   },
@@ -124,9 +126,11 @@ function App() {
   const [loadError, setLoadError] = useState("");
   const [localError, setLocalError] = useState("");
   const [notice, setNotice] = useState("");
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
   const requestIdRef = useRef(0);
   const localRequestIdRef = useRef(0);
+  const menuToggleRef = useRef(null);
 
   const loadDashboard = useCallback(
     async ({ signal, showNotice = false, forceRefresh = false } = {}) => {
@@ -169,7 +173,7 @@ function App() {
 
       setLocalFeed({
         ...result,
-        incidents: sortIncidentsByRisk(result.incidents),
+        incidents: sortIncidentsByOccurredAt(result.incidents),
       });
       if (showNotice) setNotice("Notícias locais atualizadas");
     } catch (error) {
@@ -211,6 +215,20 @@ function App() {
     const timeoutId = window.setTimeout(() => setNotice(""), 2600);
     return () => window.clearTimeout(timeoutId);
   }, [notice]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+
+    const closeOnEscape = (event) => {
+      if (event.key !== "Escape") return;
+
+      setIsMenuOpen(false);
+      // [UI] Devolve o contexto ao acionador quando o menu recolhivel fecha pelo teclado.
+      window.requestAnimationFrame(() => menuToggleRef.current?.focus());
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [isMenuOpen]);
 
   const currentView = useMemo(
     () => VIEW_GROUPS.flatMap((group) => group.items).find((item) => item.id === activeView),
@@ -307,6 +325,16 @@ function App() {
     loadLocalFeed({ showNotice: true });
   }
 
+  function selectView(viewId) {
+    setActiveView(viewId);
+    setIsMenuOpen(false);
+
+    // [UI] No menu recolhivel, evita manter o foco em um item que acabou oculto.
+    if (window.matchMedia("(max-width: 1080px)").matches) {
+      window.requestAnimationFrame(() => menuToggleRef.current?.focus());
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -347,7 +375,24 @@ function App() {
       </header>
 
       <main className="workspace">
-        <aside className="api-menu" aria-label="Menu de fontes">
+        <button
+          ref={menuToggleRef}
+          className={`menu-toggle ${isMenuOpen ? "open" : ""}`}
+          type="button"
+          aria-controls="dashboard-menu"
+          aria-expanded={isMenuOpen}
+          onClick={() => setIsMenuOpen((open) => !open)}
+        >
+          {isMenuOpen ? <X size={20} /> : <Menu size={20} />}
+          <span>{isMenuOpen ? "Fechar menu" : `Menu: ${currentView?.label ?? "Resumo"}`}</span>
+        </button>
+
+        {/* [UI] Navegacao nomeada melhora a identificacao do menu por tecnologias assistivas. */}
+        <nav
+          id="dashboard-menu"
+          className={`api-menu ${isMenuOpen ? "open" : ""}`}
+          aria-label="Navegação principal do painel"
+        >
           {VIEW_GROUPS.map((group) => (
             <div className="menu-group" key={group.title}>
               <span>{group.title}</span>
@@ -358,7 +403,8 @@ function App() {
                     type="button"
                     key={item.id}
                     className={activeView === item.id ? "active" : ""}
-                    onClick={() => setActiveView(item.id)}
+                    onClick={() => selectView(item.id)}
+                    aria-current={activeView === item.id ? "page" : undefined}
                   >
                     <Icon size={17} />
                     {item.label}
@@ -367,7 +413,7 @@ function App() {
               })}
             </div>
           ))}
-        </aside>
+        </nav>
 
         <section className="screen-shell">
           <ScreenHeading view={currentView} activeView={activeView} dashboard={dashboard} localFeed={localFeed} />
@@ -446,7 +492,7 @@ function OverviewScreen({ dashboard, localFeed }) {
           <SummaryLine icon={CloudRain} label="Chuva hoje" value={formatValue(today?.rainProbability, "%")} detail={`${formatValue(today?.precipitation, " mm")} previstos`} />
           <SummaryLine icon={Newspaper} label="Notícias locais" value={formatInteger(localFeed.incidents.length)} detail={latestLocal?.title ?? "Sem item local no filtro atual"} />
           <SummaryLine icon={Satellite} label="NeoWs 7 dias" value={formatInteger(neows?.count)} detail={`${formatInteger(neows?.hazardousCount)} potencialmente perigosos`} />
-          <SummaryLine icon={Flame} label="Fireball" value={formatInteger(dashboard.fireballs.length)} detail="Registros recentes CNEOS" />
+          <SummaryLine icon={Flame} label="Bolas de fogo" value={formatInteger(dashboard.fireballs.length)} detail="Registros recentes CNEOS" />
         </div>
       </section>
     </div>
@@ -639,6 +685,13 @@ function ApodScreen({ apod }) {
         <h3>{apod.title}</h3>
         <p>{formatDate(apod.date)}</p>
         <p>{apod.explanation || "Sem descrição retornada pela NASA."}</p>
+        {apod.translationStatus && apod.translationStatus !== "translated" && (
+          <small className="translation-note">
+            {apod.translationStatus === "partial"
+              ? "Parte do conteúdo está no original porque a tradução automática ficou indisponível."
+              : "Conteúdo original em inglês: a tradução automática está indisponível no momento."}
+          </small>
+        )}
         {apod.url && (
           <a className="source-link" href={apod.url} target="_blank" rel="noreferrer">
             Abrir APOD <ExternalLink size={16} />
@@ -669,7 +722,7 @@ function NeoWsScreen({ neows }) {
               <small>
                 {formatDistanceKm(item.missDistanceKm)} | {formatValue(item.velocityKmS, " km/s")} |{" "}
                 {formatValue(item.diameterM, " m")}
-                {item.hazardous ? " | PHA" : ""}
+                {item.hazardous ? " | Potencialmente perigoso" : ""}
               </small>
             </div>
           ))}
@@ -683,7 +736,7 @@ function CadScreen({ cad }) {
   return (
     <section className="data-section">
       <div className="section-title">
-        <h3>Close-Approach Data</h3>
+        <h3>Dados de aproximações</h3>
         <span>{cad.length} aproximação(ões)</span>
       </div>
       {cad.length === 0 ? (
@@ -726,7 +779,7 @@ function FireballScreen({ fireballs }) {
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <EmptyState text="Fireball API sem registros recentes no recorte atual." compact />
+          <EmptyState text="API de bolas de fogo sem registros recentes no recorte atual." compact />
         )}
       </section>
 
@@ -752,11 +805,11 @@ function MarsScreen({ photos }) {
   return (
     <section className="data-section">
       <div className="section-title">
-        <h3>Curiosity rover</h3>
+        <h3>Veículo explorador Curiosity</h3>
         <span>{photos.length} foto(s)</span>
       </div>
       {photos.length === 0 ? (
-        <EmptyState text="Mars Rover Photos indisponível no momento." />
+        <EmptyState text="Fotos do veículo explorador de Marte indisponíveis no momento." />
       ) : (
         <div className="photo-grid">
           {photos.slice(0, 6).map((photo) => (

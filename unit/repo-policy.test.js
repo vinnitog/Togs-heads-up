@@ -73,7 +73,7 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(index, /%BASE_URL%icon\.svg/);
   assert.match(manifest, /"start_url": "\.\/"/);
   assert.match(manifest, /"scope": "\.\/"/);
-  assert.match(serviceWorker, /togs-heads-up-v9/);
+  assert.match(serviceWorker, /togs-heads-up-v10/);
   assert.match(serviceWorker, /application\/json/);
   assert.match(serviceWorker, /application\/xml/);
   assert.match(serviceWorker, /text\/xml/);
@@ -91,6 +91,55 @@ test("github pages deployment builds vite output for repository subpath", () => 
   assert.match(workflow, /npm run build/);
   assert.match(workflow, /actions\/upload-pages-artifact/);
   assert.match(workflow, /actions\/deploy-pages/);
+});
+
+test("responsive menu keeps accessible state and keyboard escape behavior", () => {
+  const app = read("src/App.jsx");
+  const styles = read("src/styles.css");
+
+  assert.match(app, /aria-controls="dashboard-menu"/);
+  assert.match(app, /aria-expanded=\{isMenuOpen\}/);
+  assert.match(app, /id="dashboard-menu"/);
+  assert.match(app, /aria-label="Navegação principal do painel"/);
+  assert.match(app, /aria-current=\{activeView === item\.id \? "page" : undefined\}/);
+  assert.match(app, /event\.key !== "Escape"/);
+  assert.match(app, /menuToggleRef\.current\?\.focus\(\)/);
+
+  assert.match(styles, /\.menu-toggle\s*\{\s*display:\s*none;/s);
+  const tabletRules = styles.slice(
+    styles.indexOf("@media (max-width: 1080px)"),
+    styles.indexOf("@media (max-width: 760px)"),
+  );
+  assert.match(tabletRules, /\.menu-toggle\s*\{[^}]*display:\s*inline-flex;/s);
+  assert.match(tabletRules, /\.api-menu\s*\{[^}]*display:\s*none;/s);
+  assert.match(tabletRules, /\.api-menu\.open\s*\{[^}]*display:\s*grid;/s);
+  assert.match(tabletRules, /\.menu-group\s*\{[^}]*minmax\(150px, 1fr\)/s);
+
+  const phoneRules = styles.slice(styles.indexOf("@media (max-width: 460px)"));
+  assert.match(phoneRules, /\.menu-group\s*\{[^}]*grid-template-columns:\s*1fr;/s);
+  assert.match(styles, /\.api-menu button\s*\{[^}]*min-height:\s*44px;/s);
+});
+
+test("service worker bypasses external APIs before asset caching", () => {
+  const serviceWorker = read("public/sw.js");
+  const externalCheck = serviceWorker.indexOf("const isExternalRequest = requestUrl.origin !== self.location.origin");
+  const bypassGuard = serviceWorker.indexOf(
+    'if (isExternalRequest || acceptsDynamicData || requestUrl.pathname.includes("/api/"))',
+  );
+  const assetCache = serviceWorker.lastIndexOf("event.respondWith(");
+
+  assert.ok(externalCheck >= 0, "service worker should identify cross-origin requests");
+  assert.ok(bypassGuard > externalCheck, "external request guard should use the origin check");
+  assert.ok(assetCache > bypassGuard, "external APIs should return before the asset cache handler");
+  assert.match(serviceWorker.slice(bypassGuard, assetCache), /\{\s*return;\s*\}/);
+});
+
+test("APOD fallback messaging stays explicit and in Portuguese", () => {
+  const app = read("src/App.jsx");
+
+  assert.match(app, /translationStatus === "partial"/);
+  assert.match(app, /Parte do conteúdo está no original/);
+  assert.match(app, /Conteúdo original em inglês/);
 });
 
 test("app is consult only and uses public weather and astronomy APIs", () => {

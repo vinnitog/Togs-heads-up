@@ -48,6 +48,20 @@ test("generic API payload is normalized to dashboard incidents", () => {
   assert.ok(incident.position.y >= 0 && incident.position.y <= 100);
 });
 
+test("generic incidents without a valid timestamp remain without a time", () => {
+  const incidents = normalizeGenericPayload(
+    {
+      incidents: [
+        { id: "missing-time", title: "Alerta sem horario" },
+        { id: "invalid-time", title: "Alerta com horario invalido", occurredAt: "sem-data" },
+      ],
+    },
+    apiSource,
+  );
+
+  assert.deepEqual(incidents.map((incident) => incident.occurredAt), [null, null]);
+});
+
 test("rss2json regional feed only keeps Marilia safety reports", () => {
   const incidents = normalizeRss2JsonPayload(
     {
