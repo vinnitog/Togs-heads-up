@@ -129,7 +129,7 @@ function hashText(value) {
 }
 
 function parseTimestamp(value) {
-  if (!value && value !== 0) return new Date().toISOString();
+  if (!value && value !== 0) return null;
 
   if (typeof value === "number") {
     const millis = value > 100000000000 ? value : value * 1000;
@@ -138,11 +138,11 @@ function parseTimestamp(value) {
 
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(value)) {
     const date = new Date(`${value.replace(" ", "T")}Z`);
-    return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
 
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
 function normalizeType(value = "") {
@@ -412,6 +412,7 @@ function normalizeInmetSeverity(alert) {
 }
 
 function getIncidentAgeMinutesFromIso(iso, now = new Date()) {
+  if (!iso) return Number.POSITIVE_INFINITY;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
   return Math.max(0, Math.round((now.getTime() - date.getTime()) / 60000));

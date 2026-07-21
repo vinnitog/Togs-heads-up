@@ -1,4 +1,4 @@
-const CACHE_NAME = "togs-heads-up-v9";
+const CACHE_NAME = "togs-heads-up-v10";
 const toScopeUrl = (path) => new URL(path, self.registration.scope).toString();
 const INDEX_URL = toScopeUrl("index.html");
 const APP_SHELL = ["./", "index.html", "manifest.webmanifest", "icon.svg"].map(toScopeUrl);
